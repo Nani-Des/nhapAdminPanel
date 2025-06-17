@@ -57,7 +57,7 @@ const DepartmentForm = React.memo(
         <div className="flex space-x-4 mb-4">
           <Button
             type="button"
-            variant={mode === 'select' ? 'default' : 'outline'}
+            variant={mode === 'select' ? 'primary' : 'outline'}
             onClick={() => setMode('select')}
             className={
               mode === 'select'
@@ -69,7 +69,7 @@ const DepartmentForm = React.memo(
           </Button>
           <Button
             type="button"
-            variant={mode === 'create' ? 'default' : 'outline'}
+            variant={mode === 'create' ? 'primary' : 'outline'}
             onClick={() => setMode('create')}
             className={
               mode === 'create'

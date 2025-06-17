@@ -13,7 +13,6 @@ import {
   collection,
   query,
   where,
-  addDoc,
   updateDoc,
   doc,
   onSnapshot,
@@ -23,7 +22,6 @@ import {
   documentId,
   arrayUnion,
   arrayRemove,
-  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
@@ -40,13 +38,13 @@ interface HospitalContextType {
   addDepartment: (data: string | Department) => Promise<void>;
   updateDepartment: (department: Department) => Promise<void>;
   deleteDepartment: (departmentId: string) => Promise<void>;
-  addUser: (user: Omit<Users, 'id'>) => Promise<string | undefined>;
+  addUser: (user: Omit<Users, 'id'>, authUid: string) => Promise<string | undefined>;
   updateUser: (user: Users) => Promise<void>;
   toggleUserStatus: (userId: string) => Promise<void>;
-  addMedicalRecord: (record: Omit<MedicalRecord, 'id' | 'hospitalId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateMedicalRecord: (record: MedicalRecord) => Promise<void>;
-  updateReferralStatus: (referralId: string, status: 'accepted' | 'declined') => Promise<void>;
-  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  // addMedicalRecord: (record: Omit<MedicalRecord, 'id' | 'hospitalId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  // updateMedicalRecord: (record: MedicalRecord) => Promise<void>;
+  // updateReferralStatus: (referralId: string, status: 'accepted' | 'declined') => Promise<void>;
+  // markNotificationAsRead: (notificationId: string) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
@@ -304,34 +302,36 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // User functions
-  const addUser = async (user: Omit<Users, 'id'>): Promise<string | undefined> => {
-    if (!currentAdmin || !hospital) {
-      console.warn('Cannot add user: no admin or hospital');
-      return;
-    }
+const addUser = async (user: Omit<Users, 'id'>, authUid: string): Promise<string | undefined> => {
+  if (!currentAdmin || !hospital) {
+    console.warn('Cannot add user: no admin or hospital');
+    return;
+  }
 
-    console.log('Adding user:', user);
-    try {
-      const userData = {
-        ...user,
-        'Hospital ID': hospital.id,
-        CreatedAt: Timestamp.fromDate(new Date()),
-      };
+  console.log('Adding user:', user);
+  try {
+    const userData = {
+      ...user,
+      // id: authUid, // Use auth UID as document ID
+      'Hospital ID': hospital?.id,
+      CreatedAt: Timestamp.fromDate(new Date()),
+    };
 
-      const usersCollectionRef = collection(db, 'Users');
-      const userRef = await addDoc(usersCollectionRef, userData);
+    // Use setDoc with explicit document ID instead of addDoc
+    const userRef = doc(db, 'Users', authUid);
+    await setDoc(userRef, userData);
 
-      const newUser: Users = {
-        id: userRef.id,
-        ...userData,
-      };
-      setHospitalUsers((prev) => [...prev, newUser]);
-      return userRef.id;
-    } catch (err) {
-      console.error('Add user error:', err);
-      throw err;
-    }
-  };
+    const newUser: Users = {
+      id: authUid, // Use auth UID as document ID
+      ...userData,
+    };
+    setHospitalUsers((prev) => [...prev, newUser]);
+    return authUid;
+  } catch (err) {
+    console.error('Add user error:', err);
+    throw err;
+  }
+};
 
   const updateUser = async (user: Users) => {
     if (!currentAdmin || !hospital) {
@@ -380,110 +380,110 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  // Medical record functions
-  const addMedicalRecord = async (
-    record: Omit<MedicalRecord, 'id' | 'hospitalId' | 'createdAt' | 'updatedAt'>
-  ) => {
-    if (!currentAdmin || !hospital) {
-      console.warn('Cannot add medical record: no admin or hospital');
-      throw new Error('Not authenticated or hospital not loaded');
-    }
+  // // Medical record functions
+  // const addMedicalRecord = async (
+  //   record: Omit<MedicalRecord, 'id' | 'hospitalId' | 'createdAt' | 'updatedAt'>
+  // ) => {
+  //   if (!currentAdmin || !hospital) {
+  //     console.warn('Cannot add medical record: no admin or hospital');
+  //     throw new Error('Not authenticated or hospital not loaded');
+  //   }
 
-    console.log('Adding medical record:', record);
-    try {
-      const now = Timestamp.fromDate(new Date());
-      const newRecord: MedicalRecord = {
-        id: crypto.randomUUID(),
-        hospitalId: hospital.id,
-        createdAt: now,
-        updatedAt: now,
-        ...record,
-      };
+  //   console.log('Adding medical record:', record);
+  //   try {
+  //     const now = Timestamp.fromDate(new Date());
+  //     const newRecord: MedicalRecord = {
+  //       id: crypto.randomUUID(),
+  //       hospitalId: hospital.id,
+  //       createdAt: now,
+  //       updatedAt: now,
+  //       ...record,
+  //     };
 
-      const recordRef = doc(db, 'medicalRecords', newRecord.id);
-      await setDoc(recordRef, newRecord);
-      setHospitalRecords((prev) => [...prev, newRecord]);
-    } catch (err) {
-      console.error('Add medical record error:', err);
-      throw err;
-    }
-  };
+  //     const recordRef = doc(db, 'medicalRecords', newRecord.id);
+  //     await setDoc(recordRef, newRecord);
+  //     setHospitalRecords((prev) => [...prev, newRecord]);
+  //   } catch (err) {
+  //     console.error('Add medical record error:', err);
+  //     throw err;
+  //   }
+  // };
 
-  const updateMedicalRecord = async (record: MedicalRecord) => {
-    if (!currentAdmin || !hospital) {
-      console.warn('Cannot update medical record: no admin or hospital');
-      throw new Error('Not authenticated or hospital not loaded');
-    }
+  // const updateMedicalRecord = async (record: MedicalRecord) => {
+  //   if (!currentAdmin || !hospital) {
+  //     console.warn('Cannot update medical record: no admin or hospital');
+  //     throw new Error('Not authenticated or hospital not loaded');
+  //   }
 
-    console.log('Updating medical record:', record);
-    try {
-      const updated = {
-        ...record,
-        updatedAt: Timestamp.fromDate(new Date()),
-      };
+  //   console.log('Updating medical record:', record);
+  //   try {
+  //     const updated = {
+  //       ...record,
+  //       updatedAt: Timestamp.fromDate(new Date()),
+  //     };
 
-      const recordRef = doc(db, 'medicalRecords', record.id);
-      await setDoc(recordRef, updated);
+  //     const recordRef = doc(db, 'medicalRecords', record.id);
+  //     await setDoc(recordRef, updated);
 
-      setHospitalRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
-    } catch (err) {
-      console.error('Update medical record error:', err);
-      throw err;
-    }
-  };
+  //     setHospitalRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+  //   } catch (err) {
+  //     console.error('Update medical record error:', err);
+  //     throw err;
+  //   }
+  // };
 
-  // Referral functions
-  const updateReferralStatus = async (referralId: string, status: 'accepted' | 'declined') => {
-    if (!currentAdmin || !hospital) {
-      console.warn('Cannot update referral status: no admin or hospital');
-      throw new Error('Not authenticated or hospital not loaded');
-    }
+  // // Referral functions
+  // const updateReferralStatus = async (referralId: string, status: 'accepted' | 'declined') => {
+  //   if (!currentAdmin || !hospital) {
+  //     console.warn('Cannot update referral status: no admin or hospital');
+  //     throw new Error('Not authenticated or hospital not loaded');
+  //   }
 
-    console.log('Updating referral status:', { referralId, status });
-    try {
-      const referralRef = doc(db, 'Referrals', referralId);
-      const snap = await getDoc(referralRef);
-      if (!snap.exists()) {
-        console.warn('Referral not found:', referralId);
-        return;
-      }
+  //   console.log('Updating referral status:', { referralId, status });
+  //   try {
+  //     const referralRef = doc(db, 'Referrals', referralId);
+  //     const snap = await getDoc(referralRef);
+  //     if (!snap.exists()) {
+  //       console.warn('Referral not found:', referralId);
+  //       return;
+  //     }
 
-      const updatedData = {
-        status,
-        treatmentGiven: status === 'declined' ? 'Service declined' : snap.data().treatmentGiven,
-      };
+  //     const updatedData = {
+  //       status,
+  //       treatmentGiven: status === 'declined' ? 'Service declined' : snap.data().treatmentGiven,
+  //     };
 
-      await updateDoc(referralRef, updatedData);
+  //     await updateDoc(referralRef, updatedData);
 
-      setHospitalReferrals((prev) =>
-        prev.map((r) => (r.id === referralId ? { ...r, ...updatedData } : r))
-      );
-    } catch (err) {
-      console.error('Update referral status error:', err);
-      throw err;
-    }
-  };
+  //     setHospitalReferrals((prev) =>
+  //       prev.map((r) => (r.id === referralId ? { ...r, ...updatedData } : r))
+  //     );
+  //   } catch (err) {
+  //     console.error('Update referral status error:', err);
+  //     throw err;
+  //   }
+  // };
 
-  // Notification functions
-  const markNotificationAsRead = async (notificationId: string) => {
-    if (!currentAdmin || !hospital) {
-      console.warn('Cannot mark notification as read: no admin or hospital');
-      throw new Error('Not authenticated or hospital not loaded');
-    }
+  // // Notification functions
+  // const markNotificationAsRead = async (notificationId: string) => {
+  //   if (!currentAdmin || !hospital) {
+  //     console.warn('Cannot mark notification as read: no admin or hospital');
+  //     throw new Error('Not authenticated or hospital not loaded');
+  //   }
 
-    console.log('Marking notification as read:', notificationId);
-    try {
-      const notifRef = doc(db, 'notifications', notificationId);
-      await updateDoc(notifRef, { read: true });
+  //   console.log('Marking notification as read:', notificationId);
+  //   try {
+  //     const notifRef = doc(db, 'notifications', notificationId);
+  //     await updateDoc(notifRef, { read: true });
 
-      setHospitalNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
-      );
-    } catch (err) {
-      console.error('Mark notification as read error:', err);
-      throw err;
-    }
-  };
+  //     setHospitalNotifications((prev) =>
+  //       prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+  //     );
+  //   } catch (err) {
+  //     console.error('Mark notification as read error:', err);
+  //     throw err;
+  //   }
+  // };
 
   return (
     <HospitalContext.Provider
@@ -502,10 +502,10 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addUser,
         updateUser,
         toggleUserStatus,
-        addMedicalRecord,
-        updateMedicalRecord,
-        updateReferralStatus,
-        markNotificationAsRead,
+        // addMedicalRecord,
+        // updateMedicalRecord,
+        // updateReferralStatus,
+        // markNotificationAsRead,
         loading,
         error,
       }}

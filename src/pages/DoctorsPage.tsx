@@ -12,6 +12,8 @@ import { ref, uploadBytes, getDownloadURL } from '@firebase/storage';
 import { storage } from '../firebase';
 import { Schedule } from '../types';
 import { toast } from 'react-hot-toast';
+import { createUserWithEmailAndPassword, updateProfile, updateEmail, updatePassword, getAuth, deleteUser } from "firebase/auth";
+import { auth } from "../firebase";
 
 const DoctorsPage: React.FC = () => {
   const { users: contextUsers, departments, addUser, updateUser, hospital } = useHospital();
@@ -190,135 +192,156 @@ const DoctorsPage: React.FC = () => {
     return password;
   };
 
-  const handleDisableEnable = async (userId: string, enable: boolean) => {
-    setIsLoading(true);
-    try {
-      const user = users.find((u) => u.id === userId);
-      if (!user) return;
+const handleDisableEnable = async (userId: string, enable: boolean) => {
+  setIsLoading(true);
+  try {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
 
-      await updateUser({
-        ...user,
-        Role: enable,
-        Status: enable,
-      });
+    await updateUser({
+      ...user,
+      Role: enable,
+      Status: enable,
+    });
 
-      const response = await fetch('/api/update-user-auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: user.Email,
-          disabled: !enable,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to ${enable ? 'enable' : 'disable'} auth account`);
-      }
-      toast.success(`User ${user.Email} ${enable ? 'enabled' : 'disabled'}`);
-    } catch (err) {
-      console.error(`Failed to ${enable ? 'enable' : 'disable'} doctor:`, err);
-      toast.error(`Failed to ${enable ? 'enable' : 'disable'} doctor`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    toast.success(`User ${user.Email} ${enable ? 'enabled' : 'disabled'}`);
+  } catch (err) {
+    console.error(`Failed to ${enable ? 'enable' : 'disable'} doctor:`, err);
+    toast.error(`Failed to ${enable ? 'enable' : 'disable'} doctor`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      const user = users.find((u) => u.id === selectedUser);
-      if (!user) return;
+const handleResetPassword = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsLoading(true);
+  try {
+    const user = users.find((u) => u.id === selectedUser);
+    if (!user) return;
 
-      const response = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: user.Email,
-          newPassword,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to reset password');
-      }
+    // Get the auth user
+    const authUser = await getAuth().currentUser;
+    
+    if (authUser) {
+      await updatePassword(authUser, newPassword);
       toast.success(`Password reset for ${user.Email}`);
       setIsResetPasswordModalOpen(false);
       setNewPassword('');
-    } catch (err) {
-      console.error('Failed to reset password:', err);
-      toast.error('Failed to reset password');
-    } finally {
-      setIsLoading(false);
+    } else {
+      throw new Error('User not authenticated');
     }
-  };
+  } catch (err) {
+    console.error('Failed to reset password:', err);
+    toast.error('Failed to reset password');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      if (!formData['Department ID']) {
-        toast.error('Please select a department');
-        return;
-      }
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsLoading(true);
+  try {
+    if (!formData['Department ID']) {
+      toast.error('Please select a department');
+      return;
+    }
 
-      let userId: string | undefined;
-      let imageUrl: string | null = formData['User Pic'];
+    let userId: string | undefined;
+    let imageUrl: string | null = formData['User Pic'];
 
-      if (selectedUser) {
-        const user = users.find((u) => u.id === selectedUser);
-        if (user) {
-          if (selectedImage) {
-            imageUrl = await uploadImage(selectedUser);
-          }
-          await updateUser({
-            ...user,
-            ...formData,
-            'User Pic': imageUrl || user['User Pic'],
-            Experience: parseInt(formData.Experience),
-          });
-          toast.success('Doctor updated successfully');
+    if (selectedUser) {
+      // Existing update logic remains the same
+      const user = users.find((u) => u.id === selectedUser);
+      if (user) {
+        if (selectedImage) {
+          imageUrl = await uploadImage(selectedUser);
         }
-        setIsEditModalOpen(false);
-      } else {
-        const newUserId = await addUser({
+        await updateUser({
+          ...user,
           ...formData,
+          'User Pic': imageUrl || user['User Pic'],
           Experience: parseInt(formData.Experience),
-          Status: true,
-          Role: true,
-          CreatedAt: Timestamp.fromDate(new Date()),
-          'Hospital ID': hospital?.id ?? '',
-          'User ID': '',
         });
-        if (typeof newUserId === 'string' && newUserId) {
-          userId = newUserId;
-          if (selectedImage) {
-            imageUrl = await uploadImage(newUserId);
-          }
-          const userRef = doc(db, 'Users', newUserId);
-          await updateDoc(userRef, {
-            'User ID': newUserId,
-            'User Pic': imageUrl || '',
-          });
-
-          const scheduleSubRef = collection(userRef, 'Schedule');
-          await setDoc(doc(scheduleSubRef), {
-            'Active Days': scheduleData['Active Days'],
-            'Off Days': scheduleData['Off Days'],
-            Shift: scheduleData.Shift,
-            'Shift Start': scheduleData['Shift Start'],
-            'Shift Switch': scheduleData['Shift Switch'],
-          });
-          toast.success('Doctor added successfully');
-        }
-        setIsAddModalOpen(false);
+        toast.success('Doctor updated successfully');
       }
-      resetForm();
-    } catch (err) {
-      console.error('Failed to save doctor:', err);
-      toast.error('Failed to save doctor');
-    } finally {
-      setIsLoading(false);
+      setIsEditModalOpen(false);
+    } else {
+      // New doctor creation - simplified auth
+      const password = generateRandomPassword();
+      
+      // Create auth account directly
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.Email,
+        password
+      );
+      
+      // Update display name
+      await updateProfile(userCredential.user, {
+        displayName: `${formData.Fname} ${formData.Lname}`
+      });
+
+      const authUid = userCredential.user.uid;
+
+      // Then create the Firestore user with the same ID
+      const newUserId = await addUser({
+        ...formData,
+        Experience: parseInt(formData.Experience),
+        Status: true,
+        Role: true,
+        CreatedAt: Timestamp.fromDate(new Date()),
+        'Hospital ID': hospital?.id ?? '',
+        'User ID': authUid,
+      }, authUid);
+
+      if (typeof newUserId === 'string' && newUserId) {
+        userId = newUserId;
+        if (selectedImage) {
+          imageUrl = await uploadImage(newUserId);
+        }
+        const userRef = doc(db, 'Users', newUserId);
+        await updateDoc(userRef, {
+          'User ID': newUserId,
+          'User Pic': imageUrl || '',
+        });
+
+        // Create schedule
+        const scheduleSubRef = collection(userRef, 'Schedule');
+        await setDoc(doc(scheduleSubRef), {
+          'Active Days': scheduleData['Active Days'],
+          'Off Days': scheduleData['Off Days'],
+          Shift: scheduleData.Shift,
+          'Shift Start': scheduleData['Shift Start'],
+          'Shift Switch': scheduleData['Shift Switch'],
+        });
+
+        toast.success('Doctor added successfully');
+        
+        // You can optionally show the password to the admin for them to share with the doctor
+        toast.success(`Doctor password: ${password}`, { duration: 10000 });
+      }
+      setIsAddModalOpen(false);
     }
-  };
+    resetForm();
+  } catch (err) {
+    console.error('Failed to save doctor:', err);
+    toast.error('Failed to save doctor');
+    
+    // If we created the auth user but failed to create Firestore record,
+    // we should delete the auth user to maintain consistency
+    if (formData.Email && !selectedUser) {
+      try {
+        await deleteUser(auth.currentUser!);
+      } catch (cleanupErr) {
+        console.error('Failed to clean up auth account:', cleanupErr);
+      }
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const updateUserSchedule = async (userId: string, scheduleData: any) => {
     setIsLoading(true);

@@ -218,37 +218,37 @@ const DashboardPage: React.FC = () => {
             <ActionCard
               title="Add Department"
               description="Create a new department in your hospital"
-              icon={<FolderPlus className="h-6 w-6 text-teal-700" />}
+              icon={<FolderPlus className="h-6 w-6 text-white" />}
               path="/departments"
             />
             <ActionCard
               title="Shift Schedule"
               description="Manage doctor shift schedules"
-              icon={<Users className="h-6 w-6 text-teal-700" />}
+              icon={<Users className="h-6 w-6 text-white" />}
               path="/shift-schedule"
             />
             <ActionCard
               title="View Medical Records"
               description="Access patient medical records"
-              icon={<FileText className="h-6 w-6 text-teal-700" />}
+              icon={<FileText className="h-6 w-6 text-white" />}
               path="/medical-records"
             />
             <ActionCard
               title="Manage Doctors"
               description="Manage doctor profiles"
-              icon={<CircleUser className="h-6 w-6 text-teal-700" />}
+              icon={<CircleUser className="h-6 w-6 text-white" />}
               path="/doctors"
             />
             <ActionCard
               title="Add Services"
               description="Create new hospital services"
-              icon={<FilePlus2 className="h-6 w-6 text-teal-700" />}
+              icon={<FilePlus2 className="h-6 w-6 text-white" />}
               path="/services"
             />
             <ActionCard
               title="View Referrals"
               description="Manage incoming patient referrals"
-              icon={<RefreshCw className="h-6 w-6 text-teal-700" />}
+              icon={<RefreshCw className="h-6 w-6 text-white" />}
               path="/referrals"
             />
           </div>

@@ -20,6 +20,7 @@ export interface Admin {
   email: string;
   phone: string;
   lastLogin: string;
+  isAdmin: boolean
 }
 
 export interface Department {
@@ -44,6 +45,7 @@ export interface Users {
   CreatedAt: Timestamp;
   // Schedule: Schedule;
   Region: string;
+  'User Pic': String ;
 }
 
 export interface Schedule {

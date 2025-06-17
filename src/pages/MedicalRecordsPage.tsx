@@ -180,7 +180,7 @@ const MedicalRecords: React.FC = () => {
         {/* Records Grid */}
         {loading ? (
           <div className="flex flex-col justify-center items-center py-10">
-            <Spinner className="text-teal-600 w-8 h-8" />
+            <Spinner/>
             <span className="text-teal-700 mt-2">Loading medical records...</span>
           </div>
         ) : filteredRecords.length === 0 ? (

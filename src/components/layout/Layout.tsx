@@ -2,13 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Users,
   FileText,
   FolderPlus,
   Activity,
   RefreshCw,
-  Bell,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -29,7 +26,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { currentAdmin, logout } = useAuth();
-  const { hospital, notifications } = useHospital();
+  const { hospital } = useHospital();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -40,7 +37,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const unreadNotifications = notifications.filter(n => !n.read).length;
+  // const unreadNotifications = notifications.filter(n => !n.read).length;
 
   // Fetch hospital logo and banner from Firestore
   useEffect(() => {
@@ -127,7 +124,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="h-screen flex flex-col bg-teal-50">
       {/* Header */}
       <header
-        className="text-white shadow-md sticky top-0 z-50"
+        className="text-white shadow-md sticky top-0"
         style={{
           background: hospitalBanner
             ? `url(${hospitalBanner}) no-repeat center/cover`
