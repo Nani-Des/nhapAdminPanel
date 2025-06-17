@@ -107,9 +107,9 @@ const DoctorsPage: React.FC = () => {
           .includes(searchTerm.toLowerCase()))
   );
 
-  const Title = ['Dr.', 'Mr.', 'Mrs.', 'Miss.', 'Prof.'];
+  const Title = ['Select a title', 'Dr.', 'Mr.', 'Mrs.', 'Miss.', 'Prof.'];
   const Region = [
-    'Western North', 'Western', 'Oti', 'Bono', 'Bono East', 'Ahafo', 'Greater Accra',
+    'Select a region','Western North', 'Western', 'Oti', 'Bono', 'Bono East', 'Ahafo', 'Greater Accra',
     'Eastern', 'Central', 'Northern', 'Savannah', 'North East', 'Volta', 'Upper East',
     'Upper West', 'Ashanti'
   ];
