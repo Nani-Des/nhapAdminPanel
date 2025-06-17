@@ -13,6 +13,7 @@ import {
   collection,
   query,
   where,
+  addDoc,
   updateDoc,
   doc,
   onSnapshot,
@@ -22,6 +23,7 @@ import {
   documentId,
   arrayUnion,
   arrayRemove,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
@@ -313,7 +315,7 @@ const addUser = async (user: Omit<Users, 'id'>, authUid: string): Promise<string
     const userData = {
       ...user,
       // id: authUid, // Use auth UID as document ID
-      'Hospital ID': hospital?.id,
+      'Hospital ID': hospital.id,
       CreatedAt: Timestamp.fromDate(new Date()),
     };
 
