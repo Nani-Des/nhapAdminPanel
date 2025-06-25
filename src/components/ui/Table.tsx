@@ -1,14 +1,24 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 
 interface TableProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export const Table: React.FC<TableProps> = ({ children, className = '' }) => {
+interface TableCellProps extends TableProps {
+  onClick?: () => void;
+}
+
+export const Table: React.FC<TableProps> & {
+  Header: React.FC<TableProps>;
+  Body: React.FC<TableProps>;
+  Row: React.FC<TableProps & { isClickable?: boolean }>;
+  Head: React.FC<TableProps>;
+  Cell: React.ForwardRefExoticComponent<TableCellProps & React.RefAttributes<HTMLTableCellElement>>;
+} = ({ children, className = '' }) => {
   return (
-    <div className="overflow-x-auto rounded-md border border-gray-200">
-      <table className={`min-w-full divide-y divide-gray-200 ${className}`}>
+    <div className="overflow-x-auto rounded-md border border-gray-700">
+      <table className={`min-w-full divide-y divide-gray-700 ${className}`}>
         {children}
       </table>
     </div>
@@ -17,7 +27,7 @@ export const Table: React.FC<TableProps> = ({ children, className = '' }) => {
 
 export const TableHeader: React.FC<TableProps> = ({ children, className = '' }) => {
   return (
-    <thead className={`bg-gray-50 ${className}`}>
+    <thead className={`bg-gray-800 ${className}`}>
       {children}
     </thead>
   );
@@ -25,22 +35,24 @@ export const TableHeader: React.FC<TableProps> = ({ children, className = '' }) 
 
 export const TableBody: React.FC<TableProps> = ({ children, className = '' }) => {
   return (
-    <tbody className={`divide-y divide-gray-200 bg-white ${className}`}>
+    <tbody className={`divide-y divide-gray-700 ${className}`}>
       {children}
     </tbody>
   );
 };
 
-export const TableRow: React.FC<TableProps & { isClickable?: boolean }> = ({ 
-  children, 
-  className = '', 
-  isClickable = false 
+export const TableRow: React.FC<TableProps & { isClickable?: boolean }> = ({
+  children,
+  className = '',
+  isClickable = false,
 }) => {
   return (
-    <tr className={`
-      ${isClickable ? 'hover:bg-gray-50 cursor-pointer' : ''}
-      ${className}
-    `}>
+    <tr
+      className={`
+        ${isClickable ? 'hover:bg-gray-600 cursor-pointer' : ''}
+        ${className}
+      `}
+    >
       {children}
     </tr>
   );
@@ -50,25 +62,30 @@ export const TableHead: React.FC<TableProps> = ({ children, className = '' }) =>
   return (
     <th
       scope="col"
-      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${className}`}
+      className={`px-6 py-3 text-left text-xs font-medium text-teal-400 uppercase tracking-wider ${className}`}
     >
       {children}
     </th>
   );
 };
 
-export const TableCell: React.FC<TableProps> = ({ children, className = '' }) => {
+export const TableCell = forwardRef<HTMLTableCellElement, TableCellProps>((props, ref) => {
+  const { children, className = '', onClick } = props;
   return (
-    <td className={`px-6 py-4 text-sm text-gray-500 ${className}`}>
+    <td
+      ref={ref}
+      className={`px-6 py-4 text-sm text-gray-100 ${className}`}
+      onClick={onClick}
+    >
       {children}
     </td>
   );
-};
-
-export default Object.assign(Table, {
-  Header: TableHeader,
-  Body: TableBody,
-  Row: TableRow,
-  Head: TableHead,
-  Cell: TableCell,
 });
+
+Table.Header = TableHeader;
+Table.Body = TableBody;
+Table.Row = TableRow;
+Table.Head = TableHead;
+Table.Cell = TableCell;
+
+export default Table;

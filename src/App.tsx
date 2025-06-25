@@ -15,7 +15,7 @@ import DepartmentsPage from './pages/DepartmentsPage';
 import SettingsPage from './pages/SettingsPage';
 // import NotificationsPage from './pages/NotificationsPage';
 import ReferralsPage from './pages/ReferralsPage';
-import ShiftSchedulePage from './pages/ShiftSchedulePage';
+import ShiftSchedule from './pages/ShiftSchedule';
 import { Toaster } from 'react-hot-toast';
 // import ShiftSchedulePage from './pages/ShiftSchedulePage';
 
@@ -89,7 +89,7 @@ const App: React.FC = () => {
               path="/shift-schedule" 
               element={
                 <ProtectedRoute>
-                  <ShiftSchedulePage />
+                  <ShiftSchedule />
                 </ProtectedRoute>
               } 
             />

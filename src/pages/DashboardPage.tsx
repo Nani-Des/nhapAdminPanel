@@ -228,6 +228,12 @@ const DashboardPage: React.FC = () => {
               path="/shift-schedule"
             />
             <ActionCard
+                          title="Rooster"
+                          description="Manage department rosters"
+                          icon={<Users className="h-6 w-6 text-white" />}
+                          path="/shift-schedule"
+                        />
+            <ActionCard
               title="View Medical Records"
               description="Access patient medical records"
               icon={<FileText className="h-6 w-6 text-white" />}
