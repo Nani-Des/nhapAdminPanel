@@ -48,7 +48,7 @@ const LoginPage: React.FC = () => {
   return (
     <AuthLayout 
       title="Hospital Admin Login" 
-      subtitle="Enter your 6-7 digit PIN to access your hospital dashboard"
+      subtitle="Entr your 6-7 digit PIN to access your hospital dashboard"
     >
       <form className="space-y-6" onSubmit={handleLogin}>
         <div>

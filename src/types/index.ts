@@ -46,6 +46,7 @@ export interface Users {
   // Schedule: Schedule;
   Region: string;
   'User Pic': String ;
+  Permissions?: string[] | { [key: string]: boolean };
 }
 
 export interface Schedule {

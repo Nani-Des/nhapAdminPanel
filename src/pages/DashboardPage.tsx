@@ -4,11 +4,10 @@ import {
   FolderPlus,
   CircleUser,
   FilePlus2,
-  Bell,
-  RefreshCw,
   Users
 } from 'lucide-react';
 import { useHospital } from '../contexts/HospitalContext';
+import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
 import ActionCard from '../components/dashboard/ActionCard';
 import NotificationPreview from '../components/dashboard/NotificationPreview';
@@ -80,12 +79,30 @@ const WelcomeSkeleton = () => (
 
 const DashboardPage: React.FC = () => {
   const { hospital, notifications } = useHospital();
+  const { currentAdmin } = useAuth();
   const [metrics, setMetrics] = useState({
     totalMedicalRecords: 0,
     totalDepartments: 0,
     totalUsers: 0,
   });
   const [loading, setLoading] = useState(true);
+
+  // Helper function to check if user has permission
+  const hasPermission = (permissionKey: string): boolean => {
+    if (!currentAdmin?.permissions) return false;
+    
+    // If permissions is an array of strings
+    if (Array.isArray(currentAdmin.permissions)) {
+      return currentAdmin.permissions.includes(permissionKey);
+    }
+    
+    // If permissions is an object with boolean values
+    if (typeof currentAdmin.permissions === 'object') {
+      return currentAdmin.permissions[permissionKey] === true;
+    }
+    
+    return false;
+  };
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -286,42 +303,54 @@ const DashboardPage: React.FC = () => {
               </>
             ) : (
               <>
-                <ActionCard
-                  title="Manage Departments"
-                  description="Manage departments in your hospital"
-                  icon={<FolderPlus className="h-6 w-6 text-white" />}
-                  path="/departments"
-                />
-                <ActionCard
-                  title="Shift Schedule"
-                  description="Manage doctor shift schedules"
-                  icon={<Users className="h-6 w-6 text-white" />}
-                  path="/shift-schedule"
-                />
-                <ActionCard
-                  title="Shift Roster"
-                  description="Manage department rosters"
-                  icon={<Users className="h-6 w-6 text-white" />}
-                  path="/shift-schedule"
-                />
-                <ActionCard
-                  title="View Medical Records"
-                  description="Access patient medical records"
-                  icon={<FileText className="h-6 w-6 text-white" />}
-                  path="/medical-records"
-                />
-                <ActionCard
-                  title="Manage Doctors"
-                  description="Manage doctor profiles"
-                  icon={<CircleUser className="h-6 w-6 text-white" />}
-                  path="/doctors"
-                />
-                <ActionCard
-                  title="Manage Services"
-                  description="Mange hospital services"
-                  icon={<FilePlus2 className="h-6 w-6 text-white" />}
-                  path="/services"
-                />
+                {hasPermission('departments') && (
+                  <ActionCard
+                    title="Manage Departments"
+                    description="Manage departments in your hospital"
+                    icon={<FolderPlus className="h-6 w-6 text-white" />}
+                    path="/departments"
+                  />
+                )}
+                {hasPermission('shift_schedule') && (
+                  <>
+                    <ActionCard
+                      title="Shift Schedule"
+                      description="Manage doctor shift schedules"
+                      icon={<Users className="h-6 w-6 text-white" />}
+                      path="/shift-schedule"
+                    />
+                    <ActionCard
+                      title="Shift Roster"
+                      description="Manage department rosters"
+                      icon={<Users className="h-6 w-6 text-white" />}
+                      path="/shift-schedule"
+                    />
+                  </>
+                )}
+                {hasPermission('medical_records') && (
+                  <ActionCard
+                    title="View Medical Records"
+                    description="Access patient medical records"
+                    icon={<FileText className="h-6 w-6 text-white" />}
+                    path="/medical-records"
+                  />
+                )}
+                {hasPermission('doctors') && (
+                  <ActionCard
+                    title="Manage Doctors"
+                    description="Manage doctor profiles"
+                    icon={<CircleUser className="h-6 w-6 text-white" />}
+                    path="/doctors"
+                  />
+                )}
+                {hasPermission('services') && (
+                  <ActionCard
+                    title="Manage Services"
+                    description="Mange hospital services"
+                    icon={<FilePlus2 className="h-6 w-6 text-white" />}
+                    path="/services"
+                  />
+                )}
               </>
             )}
           </div>

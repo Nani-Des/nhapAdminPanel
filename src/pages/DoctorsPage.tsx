@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Edit, Calendar, Lock, UserX, UserCheck, X } from "lucide-react";
+import { Plus, Edit, Calendar, Lock, UserX, UserCheck, X, Shield, ShieldOff } from "lucide-react";
 import { useHospital } from "../contexts/HospitalContext";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -123,7 +123,10 @@ const DoctorsPage: React.FC = () => {
   const [isScheduleLoading, setIsScheduleLoading] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] =
     useState(false);
+  const [isMakeAdminModalOpen, setIsMakeAdminModalOpen] = useState(false);
+  const [isRemoveAdminModalOpen, setIsRemoveAdminModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [userSchedules, setUserSchedules] = useState<Record<string, Schedule>>(
     {}
   );
@@ -252,6 +255,17 @@ const DoctorsPage: React.FC = () => {
   };
 
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+
+  // Available permissions for admin assignment
+  const availablePermissions = [
+    { key: "departments", label: "Departments" },
+    { key: "medical_records", label: "Medical Records" },
+    { key: "doctors", label: "Doctors" },
+    { key: "shift_schedule", label: "Shift Schedule" },
+    { key: "services", label: "Services" },
+    { key: "referrals", label: "Referrals" },
+    { key: "notifications", label: "Notifications" },
+  ];
 
   const Title = ["Select a title", "Dr.", "Mr.", "Mrs.", "Miss.", "Prof."];
   const Region = [
@@ -435,6 +449,87 @@ const DoctorsPage: React.FC = () => {
     }
   };
 
+  const handleMakeAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedPermissions.length === 0) {
+      toast.error("Please select at least one permission");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const user = users.find((u) => u.id === selectedUser);
+      if (!user) return;
+
+      // Prevent making changes to hospital_admin users
+      if ((user as any).baseRole === "hospital_admin") {
+        toast.error("Cannot modify admin status for hospital_admin users");
+        setIsMakeAdminModalOpen(false);
+        setSelectedPermissions([]);
+        setSelectedUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      const userRef = doc(db, "Users", user.id);
+      await updateDoc(userRef, {
+        baseRole: "hospital_manager", // Only hospital_manager can be assigned, not main_admin
+        Permissions: selectedPermissions,
+        hospitalId: hospital?.id || user["Hospital ID"],
+      });
+
+      toast.success(`${user.Fname} ${user.Lname} is now an admin`);
+      setIsMakeAdminModalOpen(false);
+      setSelectedPermissions([]);
+      setSelectedUser(null);
+    } catch (err) {
+      console.error("Failed to make admin:", err);
+      toast.error("Failed to make admin");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRemoveAdmin = async () => {
+    setIsLoading(true);
+    try {
+      const user = users.find((u) => u.id === selectedUser);
+      if (!user) return;
+
+      // Prevent removing admin status from hospital_admin users
+      if ((user as any).baseRole === "hospital_admin") {
+        toast.error("Cannot remove admin status from hospital_admin users");
+        setIsRemoveAdminModalOpen(false);
+        setSelectedUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      const userRef = doc(db, "Users", user.id);
+      await updateDoc(userRef, {
+        baseRole: null,
+        Permissions: [],
+      });
+
+      toast.success(`${user.Fname} ${user.Lname} is no longer an admin`);
+      setIsRemoveAdminModalOpen(false);
+      setSelectedUser(null);
+    } catch (err) {
+      console.error("Failed to remove admin:", err);
+      toast.error("Failed to remove admin");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const togglePermission = (permissionKey: string) => {
+    setSelectedPermissions((prev) =>
+      prev.includes(permissionKey)
+        ? prev.filter((p) => p !== permissionKey)
+        : [...prev, permissionKey]
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -481,7 +576,6 @@ const DoctorsPage: React.FC = () => {
           {
             ...formData,
             Designation: formData.Designation,
-            Experience: 1,
             Status: true,
             Role: true,
             CreatedAt: Timestamp.fromDate(new Date()),
@@ -592,6 +686,7 @@ const DoctorsPage: React.FC = () => {
       Status: true,
       Region: "",
       "User Pic": "",
+      Experience: 1,
     });
     setFormStep(1);
     setSelectedImage(null);
@@ -824,6 +919,7 @@ const DoctorsPage: React.FC = () => {
                           "User Pic": user["User Pic"]
                             ? String(user["User Pic"])
                             : "",
+                          Experience: (user as any).Experience || 1,
                         });
                         setImagePreview(
                           user["User Pic"] ? String(user["User Pic"]) : null
@@ -870,6 +966,40 @@ const DoctorsPage: React.FC = () => {
                       <Lock className="w-4 h-4 mr-1" />
                       Reset Password
                     </Button>
+                    {/* Only show Make Admin button for users who are not admins */}
+                    {(user as any).baseRole !== "hospital_manager" &&
+                      (user as any).baseRole !== "hospital_admin" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(user.id);
+                            setSelectedPermissions([]);
+                            setIsMakeAdminModalOpen(true);
+                          }}
+                          className="border-teal-200 text-teal-700 hover:bg-teal-300"
+                          disabled={isLoading}
+                        >
+                          <Shield className="w-4 h-4 mr-1" />
+                          Make Admin
+                        </Button>
+                      )}
+                    {/* Only show Remove Admin button for hospital_manager, NOT for hospital_admin */}
+                    {(user as any).baseRole === "hospital_manager" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(user.id);
+                            setIsRemoveAdminModalOpen(true);
+                          }}
+                          className="border-red-200 text-red-600 hover:bg-red-100"
+                          disabled={isLoading}
+                        >
+                          <ShieldOff className="w-4 h-4 mr-1" />
+                          Remove Admin
+                        </Button>
+                      )}
                   </div>
                 </div>
               </div>
@@ -1351,6 +1481,151 @@ const DoctorsPage: React.FC = () => {
               {isLoading ? "Resetting..." : "Reset Password"}
             </Button>
           </form>
+        </Modal>
+
+        {/* Make Admin Modal */}
+        <Modal
+          isOpen={isMakeAdminModalOpen}
+          onClose={() => {
+            setIsMakeAdminModalOpen(false);
+            setSelectedUser(null);
+            setSelectedPermissions([]);
+          }}
+          title="Make Admin"
+          size="lg"
+        >
+          <form onSubmit={handleMakeAdmin} className="space-y-6">
+            <div>
+              <p className="text-teal-700 mb-4">
+                Select permissions for{" "}
+                <span className="font-semibold">
+                  {users.find((u) => u.id === selectedUser)?.Fname}{" "}
+                  {users.find((u) => u.id === selectedUser)?.Lname}
+                </span>
+                . This will grant them admin access with the selected permissions.
+              </p>
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-teal-900 mb-2">
+                  Permissions
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {availablePermissions.map((permission) => (
+                    <label
+                      key={permission.key}
+                      className="flex items-center space-x-3 p-3 rounded-lg border-2 border-teal-200 hover:bg-teal-50 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPermissions.includes(permission.key)}
+                        onChange={() => togglePermission(permission.key)}
+                        className="w-4 h-4 text-teal-600 border-teal-300 rounded focus:ring-teal-500"
+                      />
+                      <span className="text-sm text-teal-900">
+                        {permission.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {selectedPermissions.length === 0 && (
+                  <p className="text-sm text-red-600 mt-2">
+                    Please select at least one permission
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsMakeAdminModalOpen(false);
+                  setSelectedUser(null);
+                  setSelectedPermissions([]);
+                }}
+                className="border-teal-200 text-teal-700 hover:bg-teal-100"
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+                disabled={isLoading || selectedPermissions.length === 0}
+              >
+                {isLoading ? "Granting..." : "Make Admin"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* Remove Admin Modal */}
+        <Modal
+          isOpen={isRemoveAdminModalOpen}
+          onClose={() => {
+            setIsRemoveAdminModalOpen(false);
+            setSelectedUser(null);
+          }}
+          title="Remove Admin"
+          size="md"
+        >
+          <div className="space-y-6">
+            {users.find((u) => u.id === selectedUser) &&
+            (users.find((u) => u.id === selectedUser) as any).baseRole ===
+              "hospital_admin" ? (
+              <div className="space-y-4">
+                <p className="text-red-700 font-semibold">
+                  Cannot Remove Admin Status
+                </p>
+                <p className="text-teal-700">
+                  Users with <span className="font-semibold">hospital_admin</span> role
+                  cannot have their admin status removed or permissions modified. This is a
+                  protected role.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setIsRemoveAdminModalOpen(false);
+                    setSelectedUser(null);
+                  }}
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                >
+                  Close
+                </Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-teal-700">
+                  Are you sure you want to remove admin access from{" "}
+                  <span className="font-semibold">
+                    {users.find((u) => u.id === selectedUser)?.Fname}{" "}
+                    {users.find((u) => u.id === selectedUser)?.Lname}
+                  </span>
+                  ? This will revoke their admin privileges and permissions.
+                </p>
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsRemoveAdminModalOpen(false);
+                      setSelectedUser(null);
+                    }}
+                    className="border-teal-200 text-teal-700 hover:bg-teal-100"
+                    disabled={isLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleRemoveAdmin}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Removing..." : "Remove Admin"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </Modal>
       </div>
     </Layout>

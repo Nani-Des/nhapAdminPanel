@@ -13,7 +13,8 @@ import {
   CircleUser,
   Clock,
   Upload,
-  Bell
+  Bell,
+  Building2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useHospital } from '../../contexts/HospitalContext';
@@ -27,9 +28,16 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { currentAdmin, logout } = useAuth();
-  const { hospital, notifications } = useHospital();
+  const { hospital, notifications, setSelectedHospitalId } = useHospital();
   const location = useLocation();
   const navigate = useNavigate();
+  
+  const handleSwitchHospital = () => {
+    if (setSelectedHospitalId) {
+      setSelectedHospitalId('');
+    }
+    navigate('/select-hospital');
+  };
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hospitalLogo, setHospitalLogo] = useState<string | null>(null);
   const [hospitalBanner, setHospitalBanner] = useState<string | null>(null);
@@ -63,7 +71,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Handle file uploads
   const handleUpload = async () => {
-    if (!hospital?.id || !currentAdmin?.isAdmin || (!logoFile && !bannerFile)) return;
+    // Only hospital_admin can upload images
+    if (!hospital?.id || currentAdmin?.baseRole !== 'hospital_admin' || (!logoFile && !bannerFile)) return;
 
     setIsUploading(true);
     try {
@@ -95,17 +104,44 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   };
 
-  const navItems = [
-    { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: 'Departments', path: '/departments', icon: <FolderPlus className="w-5 h-5" /> },
-    { label: 'Medical Records', path: '/medical-records', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Doctors', path: '/doctors', icon: <CircleUser className="w-5 h-5" /> },
-    { label: 'Shift Schedule', path: '/shift-schedule', icon: <Clock className="w-5 h-5" /> },
-    { label: 'Services', path: '/services', icon: <FilePlus2 className="w-5 h-5" /> },
-    { label: 'Referrals', path: '/referrals', icon: <RefreshCw className="w-5 h-5" /> },
-    { label: 'Notifications', path: '/notifications', icon: <Bell className="w-5 h-5" />, badge: unreadNotifications },
+  // Helper function to check if user has permission
+  const hasPermission = (permissionKey: string): boolean => {
+    if (!currentAdmin?.permissions) return false;
     
+    // If permissions is an array of strings
+    if (Array.isArray(currentAdmin.permissions)) {
+      return currentAdmin.permissions.includes(permissionKey);
+    }
+    
+    // If permissions is an object with boolean values
+    if (typeof currentAdmin.permissions === 'object') {
+      return currentAdmin.permissions[permissionKey] === true;
+    }
+    
+    return false;
+  };
+
+  // All navigation items with their permission keys
+  const allNavItems = [
+    { label: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-5 h-5" />, permission: 'dashboard' },
+    { label: 'Departments', path: '/departments', icon: <FolderPlus className="w-5 h-5" />, permission: 'departments' },
+    { label: 'Medical Records', path: '/medical-records', icon: <FileText className="w-5 h-5" />, permission: 'medical_records' },
+    { label: 'Doctors', path: '/doctors', icon: <CircleUser className="w-5 h-5" />, permission: 'doctors' },
+    { label: 'Shift Schedule', path: '/shift-schedule', icon: <Clock className="w-5 h-5" />, permission: 'shift_schedule' },
+    { label: 'Services', path: '/services', icon: <FilePlus2 className="w-5 h-5" />, permission: 'services' },
+    { label: 'Referrals', path: '/referrals', icon: <RefreshCw className="w-5 h-5" />, permission: 'referrals' },
+    { label: 'Notifications', path: '/notifications', icon: <Bell className="w-5 h-5" />, permission: 'notifications', badge: unreadNotifications },
   ];
+
+  // Filter navigation items based on permissions
+  // Dashboard is always available, others require permission
+  // main_admin has access to everything
+  const navItems = allNavItems.filter(item => {
+    if (item.path === '/') return true; // Dashboard is always accessible
+    // main_admin has access to all pages
+    if (currentAdmin?.baseRole === 'main_admin') return true;
+    return hasPermission(item.permission);
+  });
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -150,7 +186,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <Activity className="h-6 w-6 text-teal-100" />
                 </div>
                 <span className="ml-3 text-xl font-bold text-teal-100">
-                  {hospital?.["Hospital Name"]} Admin
+                  {currentAdmin?.baseRole === 'main_admin' 
+                    ? 'Super Admin' 
+                    : `${hospital?.["Hospital Name"] || 'Hospital'} Admin`}
                 </span>
               </div>
             </div>
@@ -162,28 +200,39 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       src={hospitalLogo}
                       alt="Hospital Logo"
                       className="h-10 w-10 rounded-lg object-cover shadow-md cursor-pointer"
-                      onClick={() => currentAdmin?.isAdmin && setIsModalOpen(true)}
+                      onClick={() => currentAdmin?.baseRole === 'hospital_admin' && setIsModalOpen(true)}
                       title="Change logo and banner"
                     />
                   ) : (
                     <div
                       className="h-10 w-10 rounded-lg bg-gradient-to-r from-teal-600 to-teal-700 flex items-center justify-center text-white font-semibold shadow-md cursor-pointer"
-                      onClick={() => currentAdmin?.isAdmin && setIsModalOpen(true)}
+                      onClick={() => currentAdmin?.baseRole === 'hospital_admin' && setIsModalOpen(true)}
                       title="Change logo and banner"
                     >
-                      {currentAdmin?.name.charAt(0)}
+                      {currentAdmin?.name ? currentAdmin.name.charAt(0) : ''}
                     </div>
                   )}
                 </div>
                 <div className="hidden md:block">
                   <div className="text-sm font-semibold text-teal-100">
-                    {currentAdmin?.name}
+                    {currentAdmin?.name || 'Admin'}
                   </div>
                   <div className="text-xs text-teal-200 truncate">
-                    {hospital?.["Hospital Name"]}
+                    {currentAdmin?.baseRole === 'main_admin' 
+                      ? 'Super Admin' 
+                      : hospital?.["Hospital Name"] || 'Hospital'}
                   </div>
                 </div>
               </div>
+              {currentAdmin?.baseRole === 'main_admin' && (
+                <button
+                  onClick={handleSwitchHospital}
+                  className="p-2 rounded-lg text-teal-100 hover:text-white hover:bg-teal-800 focus:outline-none transition-colors duration-200"
+                  title="Switch Hospital"
+                >
+                  <Building2 className="h-5 w-5" />
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 className="p-2 rounded-lg text-teal-100 hover:text-white hover:bg-teal-800 focus:outline-none transition-colors duration-200"
@@ -197,7 +246,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </header>
 
       {/* Upload Modal */}
-      {isModalOpen && currentAdmin?.isAdmin && (
+      {isModalOpen && currentAdmin?.baseRole === 'hospital_admin' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-teal-100 p-6 rounded-lg shadow-xl max-w-md w-full">
             <div className="flex justify-between items-center mb-4">
@@ -342,27 +391,38 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       src={hospitalLogo}
                       alt="Hospital Logo"
                       className="h-12 w-12 rounded-lg object-cover shadow-md cursor-pointer"
-                      onClick={() => currentAdmin?.isAdmin && setIsModalOpen(true)}
+                      onClick={() => currentAdmin?.baseRole === 'hospital_admin' && setIsModalOpen(true)}
                       title="Change logo and banner"
                     />
                   ) : (
                     <div
                       className="h-12 w-12 rounded-lg bg-gradient-to-r from-teal-600 to-teal-700 flex items-center justify-center text-white font-semibold shadow-md"
-                      onClick={() => currentAdmin?.isAdmin && setIsModalOpen(true)}
+                      onClick={() => currentAdmin?.baseRole === 'hospital_admin' && setIsModalOpen(true)}
                       title="Change logo and banner"
                     >
-                      {currentAdmin?.name.charAt(0)}
+                      {currentAdmin?.name ? currentAdmin.name.charAt(0) : ''}
                     </div>
                   )}
                 </div>
                 <div className="ml-3">
                   <div className="text-sm font-medium text-teal-900">
-                    {currentAdmin?.name}
+                    {currentAdmin?.name || 'Admin'}
                   </div>
                   <div className="text-xs text-teal-700 truncate text-wrap">
-                    {hospital?.["Hospital Name"]}
+                    {currentAdmin?.baseRole === 'main_admin' 
+                      ? 'Super Admin' 
+                      : hospital?.["Hospital Name"] || 'Hospital'}
                   </div>
                 </div>
+                {currentAdmin?.baseRole === 'main_admin' && (
+                  <button
+                    onClick={handleSwitchHospital}
+                    className="ml-2 p-2 rounded-lg text-teal-700 hover:text-teal-900 hover:bg-teal-200 focus:outline-none transition-colors duration-200"
+                    title="Switch Hospital"
+                  >
+                    <Building2 className="h-5 w-5" />
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="ml-auto p-2 rounded-lg text-teal-700 hover:text-teal-900 hover:bg-teal-200 focus:outline-none transition-colors duration-200"

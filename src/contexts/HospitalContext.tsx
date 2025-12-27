@@ -47,6 +47,7 @@ interface HospitalContextType {
   // updateMedicalRecord: (record: MedicalRecord) => Promise<void>;
   // updateReferralStatus: (referralId: string, status: 'accepted' | 'declined') => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
+  setSelectedHospitalId?: (hospitalId: string) => void; // For main_admin to switch hospitals
   loading: boolean;
   error: string | null;
 }
@@ -65,11 +66,46 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hospitalMetrics, setHospitalMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedHospitalId, setSelectedHospitalIdState] = useState<string | null>(null);
+
+  // Function to set selected hospital ID (for main_admin)
+  const setSelectedHospitalId = (hospitalId: string) => {
+    setSelectedHospitalIdState(hospitalId);
+  };
 
   // 1. Fetch hospital + general collections
   useEffect(() => {
-    if (!currentAdmin?.hospitalId) {
-      console.log('No currentAdmin or hospitalId, resetting data');
+      if (!currentAdmin) {
+        setLoading(true);
+        return;
+      }
+    
+    // For main_admin, use selectedHospitalId if set, otherwise show selection page
+    // For other roles, use currentAdmin.hospitalId
+    let hospitalId: string | undefined;
+    
+    if (currentAdmin.baseRole === 'main_admin') {
+      hospitalId = selectedHospitalId || undefined;
+      // If main_admin but no hospital selected, don't load hospital data
+      if (!selectedHospitalId) {
+        setHospital(null);
+        setHospitalDepartments([]);
+        setHospitalUsers([]);
+        setHospitalRecords([]);
+        setHospitalServices([]);
+        setHospitalReferrals([]);
+        setHospitalNotifications([]);
+        setHospitalMetrics(null);
+        setLoading(false);
+        return;
+      }
+    } else {
+      hospitalId = currentAdmin.hospitalId;
+    }
+
+    if (!hospitalId) {
+      console.warn('Admin has no hospitalId');
+      setLoading(false);
       setHospital(null);
       setHospitalDepartments([]);
       setHospitalUsers([]);
@@ -81,8 +117,6 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLoading(false);
       return;
     }
-
-    const hospitalId = currentAdmin.hospitalId;
     console.log('Fetching hospital:', hospitalId);
 
     const unsubHospital = onSnapshot(
@@ -137,7 +171,7 @@ export const HospitalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       unsubReferrals();
       unsubNotifications();
     };
-  }, [currentAdmin]);
+  }, [currentAdmin, selectedHospitalId]);
 
   // 2. Fetch departments after hospital is loaded
   useEffect(() => {
@@ -498,6 +532,7 @@ const addUser = async (user: Omit<Users, 'id'>, authUid: string): Promise<string
         referrals: hospitalReferrals,
         notifications: hospitalNotifications,
         metrics: hospitalMetrics,
+        setSelectedHospitalId,
         addDepartment,
         updateDepartment,
         deleteDepartment,

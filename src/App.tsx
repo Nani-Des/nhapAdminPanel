@@ -1,9 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { HospitalProvider } from './contexts/HospitalContext';
+import { HospitalProvider, useHospital } from './contexts/HospitalContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import HospitalSelectionPage from './pages/HospitalSelectionPage';
 // import UsersPage from './pages/UsersPage';
 import MedicalRecordsPage from './pages/MedicalRecordsPage';
 import DoctorsPage from './pages/DoctorsPage';
@@ -24,7 +25,71 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { isAuthenticated } = useAuth();
   
   if (!isAuthenticated) {
-    return <Navigate to="/login\" replace />;
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Component to handle main_admin routing
+const MainAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentAdmin } = useAuth();
+  const { hospital } = useHospital();
+  
+  // If main_admin and no hospital selected, redirect to hospital selection
+  if (currentAdmin?.baseRole === 'main_admin' && !hospital) {
+    return <Navigate to="/select-hospital" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Helper function to check if user has permission
+const hasPermission = (permissions: string[] | { [key: string]: boolean } | undefined, permissionKey: string): boolean => {
+  if (!permissions) return false;
+  
+  // If permissions is an array of strings
+  if (Array.isArray(permissions)) {
+    return permissions.includes(permissionKey);
+  }
+  
+  // If permissions is an object with boolean values
+  if (typeof permissions === 'object') {
+    return permissions[permissionKey] === true;
+  }
+  
+  return false;
+};
+
+const PermissionProtectedRoute: React.FC<{ 
+  children: React.ReactNode; 
+  permission: string;
+}> = ({ children, permission }) => {
+  const { isAuthenticated, currentAdmin } = useAuth();
+  const { hospital } = useHospital();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // For main_admin, require hospital selection
+  if (currentAdmin?.baseRole === 'main_admin' && !hospital) {
+    return <Navigate to="/select-hospital" replace />;
+  }
+  
+  // Dashboard is always accessible
+  if (permission === 'dashboard') {
+    return <>{children}</>;
+  }
+  
+  // main_admin has access to everything (if hospital is selected)
+  if (currentAdmin?.baseRole === 'main_admin') {
+    return <>{children}</>;
+  }
+  
+  // Check if user has the required permission
+  if (!hasPermission(currentAdmin?.permissions, permission)) {
+    return <Navigate to="/" replace />;
   }
   
   return <>{children}</>;
@@ -39,19 +104,29 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route 
+              path="/select-hospital" 
+              element={
+                <ProtectedRoute>
+                  <HospitalSelectionPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
               path="/" 
               element={
                 <ProtectedRoute>
-                  <DashboardPage />
+                  <MainAdminRoute>
+                    <DashboardPage />
+                  </MainAdminRoute>
                 </ProtectedRoute>
               } 
             />
             <Route 
               path="/departments" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="departments">
                   <DepartmentsPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
             {/* <Route 
@@ -73,41 +148,41 @@ const App: React.FC = () => {
             <Route 
               path="/medical-records" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="medical_records">
                   <MedicalRecordsPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
             <Route 
               path="/doctors" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="doctors">
                   <DoctorsPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
-                        <Route 
+            <Route 
               path="/shift-schedule" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="shift_schedule">
                   <ShiftSchedule />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
             <Route 
               path="/services" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="services">
                   <ServicesPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
-                        <Route 
+            <Route 
               path="/notifications" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="notifications">
                   <NotificationsPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
             {/* <Route 
@@ -118,12 +193,12 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               } 
             /> */}
-                        <Route 
+            <Route 
               path="/referrals" 
               element={
-                <ProtectedRoute>
+                <PermissionProtectedRoute permission="referrals">
                   <ReferralsPage />
-                </ProtectedRoute>
+                </PermissionProtectedRoute>
               } 
             />
                         <Route 

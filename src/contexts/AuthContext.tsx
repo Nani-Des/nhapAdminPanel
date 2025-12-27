@@ -1,95 +1,113 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from '../firebase';  // adjust the path to your firebase config
-import { Admin } from '../types';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+
+interface AdminSession {
+  uid: string;
+  baseRole: 'hospital_admin' | 'hospital_manager' | 'main_admin';
+  hospitalId?: string; // Optional for main_admin
+  hospitalName?: string;
+  permissions?: string[] | { [key: string]: boolean };
+  name?: string; // User's name from Users collection
+}
 
 interface AuthContextType {
-  currentAdmin: Admin | null;
-  login: (pin: string) => Promise<boolean>;
-  logout: () => void;
+  currentAdmin: AdminSession | null;
   isAuthenticated: boolean;
-  error: string | null;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentAdmin, setCurrentAdmin] = useState<Admin | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [currentAdmin, setCurrentAdmin] = useState<AdminSession | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check for saved admin in localStorage
-    const savedAdmin = localStorage.getItem('currentAdmin');
-    if (savedAdmin) {
-      setCurrentAdmin(JSON.parse(savedAdmin));
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setCurrentAdmin(null);
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const userRef = doc(db, 'Users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        await signOut(auth);
+        return;
+      }
+
+      const userData = userSnap.data();
+
+      if (
+        userData.baseRole !== 'hospital_admin' &&
+        userData.baseRole !== 'hospital_manager' &&
+        userData.baseRole !== 'main_admin'
+      ) {
+        await signOut(auth);
+        return;
+      }
+
+      let hospitalName: string | undefined;
+
+      // Only fetch hospital name if user has a hospitalId (not for main_admin)
+      if (userData.hospitalId && userData.baseRole !== 'main_admin') {
+        const hospitalRef = doc(db, 'Hospital', userData.hospitalId);
+        const hospitalSnap = await getDoc(hospitalRef);
+        hospitalName = hospitalSnap.exists()
+          ? hospitalSnap.data().name
+          : undefined;
+      }
+
+      // Get user's name from userData
+      const userName = userData.Fname && userData.Lname 
+        ? `${userData.Fname} ${userData.Lname}`
+        : userData.name || user.displayName || undefined;
+
+      setCurrentAdmin({
+        uid: user.uid,
+        baseRole: userData.baseRole,
+        hospitalId: userData.hospitalId,
+        hospitalName,
+        permissions: userData.Permissions || userData.permissions || [],
+        name: userName,
+      });
+
       setIsAuthenticated(true);
-    }
+    });
+
+    return () => unsub();
   }, []);
 
-const login = async (pin: string): Promise<boolean> => {
-  console.log("login started for pin:", pin);
-  try {
-    setError(null);
-    
-    if (!/^\d{6,7}$/.test(pin)) {
-      setError('PIN must be 6 or 7 digits');
-      console.log("PIN format invalid");
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      return true; // role validation happens in listener
+    } catch (err) {
+      console.error('Login failed:', err);
       return false;
     }
-    
-    // Firestore query here
-    const q = query(collection(db, "admins"), where("pin", "==", pin));
-    const querySnapshot = await getDocs(q);
-    
-    console.log("Query snapshot size:", querySnapshot.size);
-    
-    if (!querySnapshot.empty) {
-      const adminDoc = querySnapshot.docs[0];
-      const adminData = adminDoc.data() as Admin;
-      
-      const updatedAdmin: Admin = {
-        ...adminData,
-        id: adminDoc.id,
-        lastLogin: new Date().toISOString(),
-      };
-      
-      console.log("Admin found:", updatedAdmin);
-      
-      setCurrentAdmin(updatedAdmin);
-      setIsAuthenticated(true);
-      localStorage.setItem('currentAdmin', JSON.stringify(updatedAdmin));
-      return true;
-    } else {
-      setError('Invalid PIN');
-      console.log("No admin found with this PIN");
-      return false;
-    }
-  } catch (err) {
-    setError('Login failed. Please try again.');
-    console.error("Login error:", err);
-    return false;
-  }
-};
+  };
 
-
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth);
     setCurrentAdmin(null);
     setIsAuthenticated(false);
-    localStorage.removeItem('currentAdmin');
   };
 
   return (
-    <AuthContext.Provider value={{ currentAdmin, login, logout, isAuthenticated, error }}>
+    <AuthContext.Provider value={{ currentAdmin, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };
