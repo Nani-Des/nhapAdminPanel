@@ -4,7 +4,8 @@ import {
   FolderPlus,
   CircleUser,
   FilePlus2,
-  Users
+  Users,
+  FileBarChart
 } from 'lucide-react';
 import { useHospital } from '../contexts/HospitalContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -349,6 +350,14 @@ const DashboardPage: React.FC = () => {
                     description="Mange hospital services"
                     icon={<FilePlus2 className="h-6 w-6 text-white" />}
                     path="/services"
+                  />
+                )}
+                {hasPermission('reports') && (
+                  <ActionCard
+                    title="Generate Reports"
+                    description="Generate comprehensive reports on staff and patients"
+                    icon={<FileBarChart className="h-6 w-6 text-white" />}
+                    path="/reports"
                   />
                 )}
               </>

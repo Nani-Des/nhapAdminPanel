@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Calendar, Printer } from "lucide-react";
 import { useHospital } from "../contexts/HospitalContext";
+import { useAuth } from "../contexts/AuthContext";
 import Layout from "../components/layout/Layout";
 import ShiftTable from "../components/ui/ShiftTable";
 import Input from "../components/ui/Input";
@@ -466,7 +467,8 @@ const useShiftSchedule = (
 };
 
 const ShiftSchedule: React.FC = () => {
-  const { users, departments } = useHospital();
+  const { users, departments, hospital } = useHospital();
+  const { currentAdmin } = useAuth();
   const hospitalId = users?.[0]?.["Hospital ID"] || "default_hospital";
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [shiftTimings, setShiftTimings] = useState<ShiftTiming | null>(null);
@@ -730,63 +732,406 @@ const ShiftSchedule: React.FC = () => {
     shiftConfig[shift as ShiftCode]?.tooltip(shiftTimings) || shift;
   const handlePrint = () => {
     const printElement = document.getElementById("print-schedule");
-    if (!printElement) return;
-
-    // Create a clone for printing
-    const printClone = printElement.cloneNode(true) as HTMLElement;
-
-    // Style the clone to be invisible but printable
-    printClone.style.position = "fixed";
-    printClone.style.left = "-9999px"; // Move off-screen
-    printClone.style.top = "0";
-    printClone.style.zIndex = "-1"; // Send behind everything
-    printClone.style.visibility = "hidden"; // Hide visually
-    printClone.style.opacity = "0"; // Additional hiding
-    printClone.style.display = "block"; // Ensure it's displayed for printing
-
-    // Add a class that will make it visible only when printing
-    printClone.classList.add("print-only");
-
-    // Add to body (off-screen)
-    document.body.appendChild(printClone);
-
-    // Add print-specific styles
-    const style = document.createElement("style");
-    style.id = "print-styles";
-    style.innerHTML = `
-    @media print {
-      .print-only {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 100% !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        z-index: 9999 !important;
-      }
-      body > *:not(.print-only) {
-        visibility: hidden !important;
-      }
+    if (!printElement) {
+      toast.error("Print schedule element not found");
+      return;
     }
-  `;
-    document.head.appendChild(style);
 
-    // Trigger print
-    window.print();
+    try {
+      // Create a new window for printing with modern styling
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error("Please allow popups to print the schedule");
+        return;
+      }
 
-    // Clean up after printing
-    const cleanup = () => {
-      document.body.removeChild(printClone);
-      const styles = document.getElementById("print-styles");
-      if (styles) document.head.removeChild(styles);
-      window.onafterprint = null;
-    };
+      const hospitalName = hospital?.['Hospital Name'] || 'Hospital';
+      const monthName = selectedMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+      const departmentName = selectedDepartmentId 
+        ? departments.find(d => d.id === selectedDepartmentId)?.['Department Name'] || ''
+        : 'All Departments';
+      const printDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
 
-    // Handle cleanup after print dialog closes
-    window.onafterprint = cleanup;
+      // Get filtered users for printing
+      const usersToPrint = filteredUsers.filter(
+        (user) =>
+          selectedDoctorsForPrint.length === 0 ||
+          selectedDoctorsForPrint.includes(user.id)
+      );
 
-    // Fallback cleanup in case onafterprint doesn't fire
-    setTimeout(cleanup, 1000);
+      // Generate modern print HTML
+      const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Shift Schedule - ${monthName}</title>
+          <style>
+            @page {
+              size: A4 landscape;
+              margin: 15mm 10mm;
+            }
+            
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              font-size: 9pt;
+              color: #1f2937;
+              background: white;
+              line-height: 1.4;
+            }
+            
+            .print-container {
+              width: 100%;
+              max-width: 100%;
+            }
+            
+            .print-header {
+              background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+              color: #000000;
+              padding: 20px 25px;
+              border-radius: 8px 8px 0 0;
+              margin-bottom: 20px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+              border: 2px solid #0d9488;
+            }
+            
+            .print-header h1 {
+              font-size: 24pt;
+              font-weight: 700;
+              margin-bottom: 8px;
+              letter-spacing: -0.5px;
+              color: #000000;
+            }
+            
+            .print-header h2 {
+              font-size: 16pt;
+              font-weight: 500;
+              margin-bottom: 4px;
+              color: #000000;
+            }
+            
+            .print-header .meta-info {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-top: 12px;
+              font-size: 10pt;
+              color: #000000;
+            }
+            
+            .print-legend {
+              background: #f8fafc;
+              border: 2px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 15px 20px;
+              margin-bottom: 20px;
+              page-break-inside: avoid;
+            }
+            
+            .print-legend h3 {
+              font-size: 11pt;
+              font-weight: 600;
+              color: #0d9488;
+              margin-bottom: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            
+            .print-legend-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+              gap: 10px;
+            }
+            
+            .print-legend-item {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 6px 10px;
+              background: white;
+              border-radius: 6px;
+              border: 1px solid #e2e8f0;
+            }
+            
+            .print-legend-color {
+              width: 20px;
+              height: 20px;
+              border-radius: 4px;
+              border: 2px solid rgba(0,0,0,0.1);
+              flex-shrink: 0;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            
+            .print-legend-item span:last-child {
+              font-size: 9pt;
+              font-weight: 500;
+              color: #000000;
+            }
+            
+            .print-table-wrapper {
+              overflow: visible;
+              border-radius: 8px;
+              border: 2px solid #e2e8f0;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            
+            .print-table {
+              width: 100%;
+              border-collapse: collapse;
+              background: white;
+              page-break-inside: auto;
+            }
+            
+            .print-table thead {
+              background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+              color: #000000;
+              border-bottom: 2px solid #0d9488;
+            }
+            
+            .print-table th {
+              padding: 12px 8px;
+              text-align: center;
+              font-weight: 600;
+              font-size: 9pt;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              border-right: 1px solid #0d9488;
+              position: sticky;
+              top: 0;
+              z-index: 10;
+              color: #000000;
+            }
+            
+            .print-table th:first-child {
+              text-align: left;
+              padding-left: 15px;
+              min-width: 180px;
+              background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+              color: #000000;
+            }
+            
+            .print-table th:last-child {
+              border-right: none;
+            }
+            
+            .print-table tbody tr {
+              page-break-inside: avoid;
+              page-break-after: auto;
+              border-bottom: 1px solid #e2e8f0;
+              transition: background-color 0.2s;
+            }
+            
+            .print-table tbody tr:nth-child(even) {
+              background: #f8fafc;
+            }
+            
+            .print-table tbody tr:hover {
+              background: #f1f5f9;
+            }
+            
+            .print-table td {
+              padding: 10px 8px;
+              text-align: center;
+              font-size: 9pt;
+              border-right: 1px solid #e2e8f0;
+              vertical-align: middle;
+            }
+            
+            .print-table td:first-child {
+              text-align: left;
+              padding-left: 15px;
+              font-weight: 600;
+              color: #1e293b;
+              background: white;
+              position: sticky;
+              left: 0;
+              z-index: 5;
+              border-right: 2px solid #cbd5e1;
+            }
+            
+            .print-table td:last-child {
+              border-right: none;
+            }
+            
+            .physician-name {
+              font-weight: 600;
+              color: #0f766e;
+              margin-bottom: 2px;
+            }
+            
+            .physician-designation {
+              font-size: 8pt;
+              color: #000000;
+              font-style: italic;
+            }
+            
+            .shift-cell {
+              font-weight: 600;
+              color: #000000;
+              border-radius: 4px;
+              padding: 6px 4px;
+              min-width: 35px;
+              display: inline-block;
+              border: 1px solid rgba(0,0,0,0.2);
+            }
+            
+            .print-footer {
+              margin-top: 25px;
+              padding-top: 15px;
+              border-top: 2px solid #e2e8f0;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-size: 8pt;
+              color: #000000;
+              page-break-inside: avoid;
+            }
+            
+            .print-footer .page-info {
+              font-weight: 500;
+              color: #000000;
+            }
+            
+            .print-footer .generated-info {
+              font-style: italic;
+              color: #000000;
+            }
+            
+            @media print {
+              body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              .print-table thead {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              .print-header {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              .shift-cell {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              @page {
+                margin: 15mm 10mm;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">
+            <div class="print-header">
+              <h1>${hospitalName}</h1>
+              <h2>Physician Shift Schedule - ${monthName}</h2>
+              ${departmentName !== 'All Departments' ? `<div style="margin-top: 8px; font-size: 11pt; opacity: 0.95;">Department: ${departmentName}</div>` : ''}
+              <div class="meta-info">
+                <span>Generated: ${printDate}</span>
+                <span>Total Physicians: ${usersToPrint.length}</span>
+              </div>
+            </div>
+            
+            <div class="print-legend">
+              <h3>Shift Legend</h3>
+              <div class="print-legend-grid">
+                ${Object.entries(shiftConfig).map(([code, { color, tooltip }]) => `
+                  <div class="print-legend-item">
+                    <span class="print-legend-color" style="background-color: ${color}"></span>
+                    <span>${code}: ${tooltip(shiftTimings).split('(')[0].trim()}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            
+            <div class="print-table-wrapper">
+              <table class="print-table">
+                <thead>
+                  <tr>
+                    <th>Physician</th>
+                    ${days.map((day) => `
+                      <th>
+                        <div style="font-weight: 700; margin-bottom: 2px;">${day.day}</div>
+                        <div style="font-size: 8pt; opacity: 0.9;">${day.date}</div>
+                      </th>
+                    `).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${usersToPrint.map((user) => `
+                    <tr>
+                      <td>
+                        <div class="physician-name">${user.Title} ${user.Fname} ${user.Lname}</div>
+                        <div class="physician-designation">${user.Designation || 'N/A'}</div>
+                      </td>
+                      ${days.map((day) => {
+                        const shift = doctorShifts[user.id]?.[day.date] || ShiftCode.NotAvailable;
+                        const shiftColor = getShiftColor(shift);
+                        return `
+                          <td>
+                            <span class="shift-cell" style="background-color: ${shiftColor}">
+                              ${shift}
+                            </span>
+                          </td>
+                        `;
+                      }).join('')}
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+            
+            <div class="print-footer">
+              <div class="generated-info">This is an official hospital document. Generated by ${currentAdmin?.name || 'Admin'}</div>
+              <div class="page-info">Page <span class="page-number"></span></div>
+            </div>
+          </div>
+          
+          <script>
+            window.onload = function() {
+              // Update page numbers
+              const totalPages = Math.ceil(document.querySelectorAll('.print-table tbody tr').length / 20);
+              document.querySelectorAll('.page-number').forEach(el => {
+                el.textContent = '1';
+              });
+              
+              // Trigger print after a short delay
+              setTimeout(function() {
+                window.print();
+                window.onafterprint = function() {
+                  window.close();
+                };
+              }, 250);
+            };
+          </script>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.write(printHTML);
+      printWindow.document.close();
+      
+      toast.success('Opening print preview...');
+    } catch (error) {
+      console.error('Error generating print:', error);
+      toast.error('Failed to generate print. Please try again.');
+    }
   };
 
   return (

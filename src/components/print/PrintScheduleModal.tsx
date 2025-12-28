@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Select from '../ui/Select';
 import { useHospital } from '../../contexts/HospitalContext';
+import { toast } from 'react-hot-toast';
 
 interface PrintScheduleModalProps {
   isOpen: boolean;
@@ -96,116 +97,324 @@ const PrintScheduleModal: React.FC<PrintScheduleModalProps> = ({
   const generatePrintContent = () => {
     const monthDate = new Date(selectedMonth + '-01');
     const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const printDate = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     
     let title = '';
     if (printType === 'selected' && selectedDoctors.length === 1) {
       const doctor = doctorsToPrint[0];
-      title = `Schedule for ${doctor.Title} ${doctor.Fname} ${doctor.Lname} - ${monthName}`;
+      title = `Schedule for ${doctor.Title} ${doctor.Fname} ${doctor.Lname}`;
     } else if (printType === 'selected' && selectedDoctors.length > 1) {
-      title = `Schedule for Selected Doctors - ${monthName}`;
+      title = `Schedule for Selected Doctors`;
     } else if (printType === 'department' && selectedDepartment) {
       const dept = departments.find(d => d.id === selectedDepartment);
-      title = `Schedule for ${dept?.['Department Name'] || 'Department'} - ${monthName}`;
+      title = `Schedule for ${dept?.['Department Name'] || 'Department'}`;
     } else {
-      title = `Schedule for All Doctors - ${monthName}`;
+      title = `Schedule for All Doctors`;
     }
 
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!printWindow) {
+      toast.error('Please allow popups to print the schedule');
+      return;
+    }
 
     const content = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${title}</title>
+        <meta charset="UTF-8">
+        <title>${title} - ${monthName}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #0d9488; padding-bottom: 10px; }
-          .hospital-name { font-size: 24px; font-weight: bold; color: #0d9488; }
-          .month-title { font-size: 20px; margin: 10px 0; }
-          .doctor-section { margin: 20px 0; page-break-inside: avoid; }
-          .doctor-name { font-size: 18px; font-weight: bold; color: #0d9488; margin-bottom: 10px; }
-          .doctor-info { margin-bottom: 10px; }
-          .schedule-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-          .schedule-table th, .schedule-table td { 
-            border: 1px solid #ccc; 
-            padding: 8px; 
-            text-align: left; 
+          @page {
+            size: A4 portrait;
+            margin: 15mm;
           }
-          .schedule-table th { background-color: #f0fdfa; }
-          .no-schedule { color: #666; font-style: italic; }
+          
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 10pt;
+            color: #1f2937;
+            background: white;
+            line-height: 1.6;
+            padding: 20px;
+          }
+          
+          .print-container {
+            max-width: 100%;
+          }
+          
+          .print-header {
+            background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+            color: #000000;
+            padding: 25px 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border: 2px solid #0d9488;
+          }
+          
+          .print-header h1 {
+            font-size: 28pt;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+            color: #000000;
+          }
+          
+          .print-header h2 {
+            font-size: 18pt;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #000000;
+          }
+          
+          .print-header .meta-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            font-size: 11pt;
+            color: #000000;
+            padding-top: 15px;
+            border-top: 1px solid #0d9488;
+          }
+          
+          .doctor-section {
+            margin-bottom: 40px;
+            page-break-inside: avoid;
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 25px;
+            border: 2px solid #e2e8f0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+          }
+          
+          .doctor-name {
+            font-size: 20pt;
+            font-weight: 700;
+            color: #0d9488;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #cbd5e1;
+          }
+          
+          .doctor-info {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+            font-size: 10pt;
+          }
+          
+          .doctor-info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          
+          .doctor-info-item strong {
+            color: #0d9488;
+            font-weight: 600;
+            min-width: 100px;
+          }
+          
+          .schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          
+          .schedule-table thead {
+            background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
+            color: #000000;
+            border-bottom: 2px solid #0d9488;
+          }
+          
+          .schedule-table th {
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 10pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #000000;
+          }
+          
+          .schedule-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 10pt;
+          }
+          
+          .schedule-table tbody tr:nth-child(even) {
+            background: #f8fafc;
+          }
+          
+          .schedule-table tbody tr:hover {
+            background: #f1f5f9;
+          }
+          
+          .schedule-value {
+            font-weight: 600;
+            color: #0d9488;
+          }
+          
+          .no-schedule {
+            text-align: center;
+            padding: 30px;
+            color: #000000;
+            font-style: italic;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 2px dashed #cbd5e1;
+          }
+          
+          .print-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e2e8f0;
+            text-align: center;
+            font-size: 9pt;
+            color: #000000;
+            page-break-inside: avoid;
+          }
+          
           @media print {
-            body { margin: 0; }
-            .page-break { page-break-before: always; }
+            body {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+              padding: 0;
+            }
+            
+            .print-header {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+            
+            .schedule-table thead {
+              print-color-adjust: exact;
+              -webkit-print-color-adjust: exact;
+            }
+            
+            .doctor-section {
+              page-break-inside: avoid;
+            }
+            
+            @page {
+              margin: 15mm;
+            }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div class="hospital-name">${hospital?.name || 'Hospital'}</div>
-          <div class="month-title">${title}</div>
-          <div>Generated on: ${new Date().toLocaleDateString()}</div>
-        </div>
-
-        ${doctorsToPrint.map((doctor, index) => `
-          <div class="doctor-section${index > 0 ? ' page-break' : ''}">
-            <div class="doctor-name">${doctor.Title} ${doctor.Fname} ${doctor.Lname}</div>
-            <div class="doctor-info">
-              <strong>Email:</strong> ${doctor.Email}<br>
-              <strong>Department:</strong> ${departments.find(d => d.id === doctor['Department ID'])?.['Department Name'] || 'N/A'}<br>
-              <strong>Experience:</strong> ${doctor.Experience} years<br>
-              <strong>Mobile:</strong> ${doctor['Mobile Number'] || 'N/A'}
+        <div class="print-container">
+          <div class="print-header">
+            <h1>${hospital?.['Hospital Name'] || hospital?.name || 'Hospital'}</h1>
+            <h2>${title} - ${monthName}</h2>
+            <div class="meta-info">
+              <span>Generated: ${printDate}</span>
+              <span>Total Doctors: ${doctorsToPrint.length}</span>
             </div>
-
-            ${doctor.schedule ? `
-              <table class="schedule-table">
-                <thead>
-                  <tr>
-                    <th>Schedule Details</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Active Days</td>
-                    <td>${doctor.schedule['Active Days'] || 0}</td>
-                  </tr>
-                  <tr>
-                    <td>Off Days</td>
-                    <td>${doctor.schedule['Off Days'] || 0}</td>
-                  </tr>
-                  <tr>
-                    <td>Number of Shifts</td>
-                    <td>${doctor.schedule.Shift || 0}</td>
-                  </tr>
-                  <tr>
-                    <td>Shift Start</td>
-                    <td>${doctor.schedule['Shift Start']?.toDate()?.toLocaleDateString() || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td>Shift Switch Frequency</td>
-                    <td>${doctor.schedule['Shift Switch'] || 0}</td>
-                  </tr>
-                </tbody>
-              </table>
-            ` : `
-              <div class="no-schedule">No schedule data available for this month.</div>
-            `}
           </div>
-        `).join('')}
+
+          ${doctorsToPrint.map((doctor, index) => `
+            <div class="doctor-section">
+              <div class="doctor-name">${doctor.Title} ${doctor.Fname} ${doctor.Lname}</div>
+              <div class="doctor-info">
+                <div class="doctor-info-item">
+                  <strong>Email:</strong>
+                  <span>${doctor.Email || 'N/A'}</span>
+                </div>
+                <div class="doctor-info-item">
+                  <strong>Department:</strong>
+                  <span>${departments.find(d => d.id === doctor['Department ID'])?.['Department Name'] || 'N/A'}</span>
+                </div>
+                <div class="doctor-info-item">
+                  <strong>Designation:</strong>
+                  <span>${doctor.Designation || 'N/A'}</span>
+                </div>
+                <div class="doctor-info-item">
+                  <strong>Mobile:</strong>
+                  <span>${doctor['Mobile Number'] || 'N/A'}</span>
+                </div>
+              </div>
+
+              ${doctor.schedule ? `
+                <table class="schedule-table">
+                  <thead>
+                    <tr>
+                      <th>Schedule Details</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Active Days</td>
+                      <td class="schedule-value">${doctor.schedule['Active Days'] || 0}</td>
+                    </tr>
+                    <tr>
+                      <td>Off Days</td>
+                      <td class="schedule-value">${doctor.schedule['Off Days'] || 0}</td>
+                    </tr>
+                    <tr>
+                      <td>Number of Shifts</td>
+                      <td class="schedule-value">${doctor.schedule.Shift || 0}</td>
+                    </tr>
+                    <tr>
+                      <td>Shift Start</td>
+                      <td class="schedule-value">${doctor.schedule['Shift Start']?.toDate ? doctor.schedule['Shift Start'].toDate().toLocaleDateString() : (doctor.schedule['Shift Start'] || 'N/A')}</td>
+                    </tr>
+                    <tr>
+                      <td>Shift Switch Frequency</td>
+                      <td class="schedule-value">${doctor.schedule['Shift Switch'] || 0}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              ` : `
+                <div class="no-schedule">No schedule data available for this month.</div>
+              `}
+            </div>
+          `).join('')}
+          
+          <div class="print-footer">
+            <p>This is an official hospital document. Generated by the Hospital Management System.</p>
+          </div>
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            }, 250);
+          };
+        </script>
       </body>
       </html>
     `;
 
     printWindow.document.write(content);
     printWindow.document.close();
-    printWindow.focus();
     
-    // Wait for content to load before printing
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
+    toast.success('Opening print preview...');
   };
 
   return (

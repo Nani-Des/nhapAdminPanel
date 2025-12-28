@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage';
 // import NotificationsPage from './pages/NotificationsPage';
 import ReferralsPage from './pages/ReferralsPage';
 import ShiftSchedule from './pages/ShiftSchedule';
+import ReportsPage from './pages/ReportsPage';
 import { Toaster } from 'react-hot-toast';
 import NotificationsPage from './pages/NotificationsPage';
 // import ShiftSchedulePage from './pages/ShiftSchedulePage';
@@ -201,7 +202,15 @@ const App: React.FC = () => {
                 </PermissionProtectedRoute>
               } 
             />
-                        <Route 
+            <Route 
+              path="/reports" 
+              element={
+                <PermissionProtectedRoute permission="reports">
+                  <ReportsPage />
+                </PermissionProtectedRoute>
+              } 
+            />
+            <Route 
               path="/settings" 
               element={
                 <ProtectedRoute>

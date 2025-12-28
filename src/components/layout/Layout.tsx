@@ -14,7 +14,8 @@ import {
   Clock,
   Upload,
   Bell,
-  Building2
+  Building2,
+  FileBarChart
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useHospital } from '../../contexts/HospitalContext';
@@ -130,6 +131,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'Shift Schedule', path: '/shift-schedule', icon: <Clock className="w-5 h-5" />, permission: 'shift_schedule' },
     { label: 'Services', path: '/services', icon: <FilePlus2 className="w-5 h-5" />, permission: 'services' },
     { label: 'Referrals', path: '/referrals', icon: <RefreshCw className="w-5 h-5" />, permission: 'referrals' },
+    { label: 'Reports', path: '/reports', icon: <FileBarChart className="w-5 h-5" />, permission: 'reports' },
     { label: 'Notifications', path: '/notifications', icon: <Bell className="w-5 h-5" />, permission: 'notifications', badge: unreadNotifications },
   ];
 
