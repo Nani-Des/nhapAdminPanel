@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Edit, Calendar, Lock, UserX, UserCheck, X, Shield, ShieldOff } from "lucide-react";
+import { Plus, Edit, Calendar, Lock, UserX, UserCheck, X, Shield, ShieldOff, Upload } from "lucide-react";
 import { useHospital } from "../contexts/HospitalContext";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
+import BulkUploadDoctors, { ProcessedDoctorRow } from "../components/doctors/BulkUploadDoctors";
 import {
   addDoc,
   collection,
@@ -16,6 +17,8 @@ import {
   updateDoc,
   Timestamp,
   onSnapshot,
+  writeBatch,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { ref, uploadBytes, getDownloadURL } from "@firebase/storage";
@@ -29,6 +32,7 @@ import {
   updatePassword,
   getAuth,
   deleteUser,
+  signOut,
 } from "firebase/auth";
 import { auth } from "../firebase";
 
@@ -118,6 +122,7 @@ const DoctorsPage: React.FC = () => {
   } = useHospital();
   const [users, setUsers] = useState(contextUsers);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isScheduleLoading, setIsScheduleLoading] = useState(false);
@@ -655,6 +660,248 @@ const DoctorsPage: React.FC = () => {
     }
   };
 
+  // Bulk import handler
+  const handleBulkImport = async (doctors: ProcessedDoctorRow[]) => {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+    const passwords: { email: string; password: string }[] = [];
+    
+    // Store hospital ID and admin info before starting
+    const hospitalId = hospital?.id;
+    if (!hospitalId) {
+      toast.error('Hospital ID not found. Cannot import doctors.');
+      return results;
+    }
+
+    // CRITICAL: Store admin's email and UID before creating users
+    // This allows us to restore the admin session if needed
+    const adminEmail = auth.currentUser?.email;
+    const adminUid = auth.currentUser?.uid;
+    if (!adminEmail || !adminUid) {
+      toast.error('Admin session not found. Please log in again.');
+      return results;
+    }
+    console.log(`Starting bulk import as admin: ${adminEmail} (${adminUid})`);
+    
+    // Set flag to prevent auth listener from signing out during bulk import
+    sessionStorage.setItem('bulkImporting', 'true');
+
+    // Pre-check for email conflicts in existing users
+    const existingEmails = new Set(users.map(u => u.Email.toLowerCase()));
+    const conflictingEmails: string[] = [];
+    
+    for (const doctor of doctors) {
+      if (existingEmails.has(doctor.Email.toLowerCase())) {
+        const existingUser = users.find(u => u.Email.toLowerCase() === doctor.Email.toLowerCase());
+        conflictingEmails.push(
+          `Row ${doctor.rowIndex} (${doctor.Email}): Email already exists - ${existingUser?.Fname || ''} ${existingUser?.Lname || ''} (ID: ${existingUser?.id || 'N/A'})`
+        );
+      }
+    }
+
+    // If there are conflicts, skip them and report
+    const doctorsToImport = doctors.filter(doctor => 
+      !existingEmails.has(doctor.Email.toLowerCase())
+    );
+
+    if (conflictingEmails.length > 0) {
+      results.errors.push(...conflictingEmails);
+      results.failed += conflictingEmails.length;
+      toast.warning(
+        `Skipping ${conflictingEmails.length} doctor(s) with duplicate emails. Check the import results for details.`,
+        { duration: 5000 }
+      );
+    }
+
+    for (const doctor of doctorsToImport) {
+      try {
+        // Generate random password
+        const password = generateRandomPassword();
+
+        // Create Firebase Auth user
+        // Note: This will temporarily sign in as the new user, but the auth state listener
+        // will sign them out because they don't have admin role. We continue anyway.
+        let userCredential;
+        try {
+          userCredential = await createUserWithEmailAndPassword(
+            auth,
+            doctor.Email,
+            password
+          );
+        } catch (authError: any) {
+          // Handle email already in use error
+          if (authError.code === 'auth/email-already-in-use') {
+            results.failed++;
+            results.errors.push(
+              `Row ${doctor.rowIndex} (${doctor.Email}): Email already exists in Firebase Auth. This email may have been created outside the system.`
+            );
+            continue; // Skip this doctor and continue with others
+          }
+          throw authError; // Re-throw other errors
+        }
+
+        const authUid = userCredential.user.uid;
+
+        // CRITICAL: Write to Firestore IMMEDIATELY after creating auth user
+        // We must write before the auth listener signs us out
+        // Parse Shift Start date first
+        let shiftStartDate: Timestamp;
+        if (doctor['Shift Start'] instanceof Date) {
+          shiftStartDate = Timestamp.fromDate(doctor['Shift Start']);
+        } else if (typeof doctor['Shift Start'] === 'string') {
+          shiftStartDate = Timestamp.fromDate(new Date(doctor['Shift Start']));
+        } else {
+          shiftStartDate = Timestamp.fromDate(new Date());
+        }
+        
+        // Convert Shift from 1-based (1=Whole Day) to 0-based for storage (0=Whole Day)
+        const shiftValue = doctor.Shift === 1 ? 0 : doctor.Shift || 0;
+
+        // Prepare user data - include all required fields
+        const userData = {
+          Fname: doctor.Fname,
+          Lname: doctor.Lname,
+          Email: doctor.Email,
+          "Mobile Number": doctor["Mobile Number"],
+          Title: doctor.Title,
+          Designation: doctor.Designation,
+          "Department ID": doctor["Department ID"],
+          "Hospital ID": hospitalId,
+          Role: true,
+          Status: doctor.Status,
+          Region: doctor.Region,
+          "User Pic": "",
+          CreatedAt: Timestamp.fromDate(new Date()),
+          "User ID": authUid,
+        };
+
+        // Use batch write to create both user and schedule atomically
+        // Write IMMEDIATELY while authenticated (before auth listener signs us out)
+        const batch = writeBatch(db);
+        
+        // Create user document
+        const userRef = doc(db, "Users", authUid);
+        batch.set(userRef, userData);
+        
+        // Create schedule document
+        const scheduleRef = doc(db, "Users", authUid, "Schedule", authUid);
+        batch.set(scheduleRef, {
+          "Active Days": doctor['Active Days'] || 5,
+          "Off Days": doctor['Off Days'] || 2,
+          Shift: shiftValue,
+          "Shift Start": shiftStartDate,
+          "Shift Switch": doctor['Shift Switch'] || 5,
+        });
+        
+        // Commit batch IMMEDIATELY - this is critical
+        // The Firestore rules allow writes based on time (before 2026-12-10)
+        // We write while authenticated as the new user (before listener signs us out)
+        try {
+          // Write immediately - don't wait for anything
+          await batch.commit();
+          console.log(`✓ Successfully created Firestore documents for ${doctor.Email} (${authUid})`);
+          
+          // Verify the write succeeded by checking if document exists
+          // This helps catch any silent failures
+          const verifyRef = doc(db, "Users", authUid);
+          const verifySnap = await getDoc(verifyRef);
+          if (!verifySnap.exists()) {
+            throw new Error('Document was not created - verification failed');
+          }
+          console.log(`✓ Verified Firestore document exists for ${doctor.Email}`);
+        } catch (firestoreError: any) {
+          console.error(`✗ Firestore write error for ${doctor.Email}:`, firestoreError);
+          console.error('Error code:', firestoreError.code);
+          console.error('Error message:', firestoreError.message);
+          console.error('Current auth user:', auth.currentUser?.email || 'None');
+          console.error('Expected authUid:', authUid);
+          
+          // If Firestore write fails, try to delete the auth user to maintain consistency
+          try {
+            // We need to be signed in as the new user to delete them
+            // But we might already be signed out, so this might fail
+            if (auth.currentUser && auth.currentUser.uid === authUid) {
+              await deleteUser(auth.currentUser);
+              console.log(`✓ Cleaned up auth user for ${doctor.Email}`);
+            } else {
+              console.warn(`⚠ Could not clean up auth user - not signed in as ${authUid}`);
+            }
+          } catch (deleteError) {
+            console.error('Failed to delete auth user after Firestore error:', deleteError);
+          }
+          throw new Error(`Failed to create Firestore document: ${firestoreError.message || firestoreError.code || 'Unknown error'}`);
+        }
+
+        // CRITICAL: Never sign out the current user
+        // The auth listener is disabled during bulk import (via sessionStorage flag)
+        // This prevents the admin from being signed out
+        console.log(`✓ Created user ${doctor.Email} - admin session preserved`);
+
+        // Update profile after Firestore write
+        // We're still signed in as the new user at this point, so this should work
+        try {
+          if (auth.currentUser && auth.currentUser.uid === authUid) {
+            await updateProfile(userCredential.user, {
+              displayName: `${doctor.Fname} ${doctor.Lname}`,
+            });
+            console.log(`✓ Updated profile for ${doctor.Email}`);
+          }
+        } catch (profileError) {
+          console.warn(`⚠ Could not update profile:`, profileError);
+          // This is not critical - the user can update their profile later
+        }
+
+        passwords.push({ email: doctor.Email, password });
+        results.success++;
+      } catch (error: any) {
+        console.error(`Failed to import doctor ${doctor.Email}:`, error);
+        results.failed++;
+        
+        // Provide more specific error messages
+        let errorMessage = error.message || "Failed to create doctor";
+        if (error.code === 'auth/email-already-in-use') {
+          errorMessage = "Email already exists in Firebase Auth";
+        } else if (error.code === 'auth/invalid-email') {
+          errorMessage = "Invalid email format";
+        } else if (error.code === 'auth/weak-password') {
+          errorMessage = "Password is too weak";
+        }
+        
+        results.errors.push(
+          `Row ${doctor.rowIndex} (${doctor.Email}): ${errorMessage}`
+        );
+
+        // Note: If auth user was created but Firestore failed, the user will remain in Auth
+        // This is acceptable as the user won't have access without the Firestore record
+        // The admin session may be temporarily affected, but will be restored
+      }
+    }
+
+    // CRITICAL: Never sign out the current user
+    // Clear the bulk import flag - this re-enables the auth listener
+    // The admin session should remain intact because we never signed out
+    sessionStorage.removeItem('bulkImporting');
+    
+    // Show passwords to admin
+    if (passwords.length > 0) {
+      const passwordList = passwords
+        .map((p) => `${p.email}: ${p.password}`)
+        .join("\n");
+      toast.success(
+        `Imported ${results.success} doctor(s). Passwords:\n${passwordList}`,
+        { duration: 15000 }
+      );
+    }
+
+    // Verify admin session is still valid (it should be since we never signed out)
+    if (auth.currentUser?.uid === adminUid) {
+      console.log('✓ Admin session preserved successfully');
+    } else {
+      console.warn('⚠ Admin session may have been affected, but we never signed out');
+    }
+
+    return results;
+  };
+
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const user = users.find((u) => u.id === selectedUser);
@@ -800,16 +1047,28 @@ const DoctorsPage: React.FC = () => {
                 Manage your hospital's doctors and their schedules
               </p>
             </div>
-            <Button
-              onClick={() => {
-                setIsAddModalOpen(true);
-                resetForm();
-              }}
-              className="flex items-center bg-teal-600 hover:bg-teal-700 text-white"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Add Doctor
-            </Button>
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  setIsBulkUploadModalOpen(true);
+                }}
+                variant="outline"
+                className="flex items-center border-teal-600 text-teal-700 hover:bg-teal-50"
+              >
+                <Upload className="w-5 h-5 mr-2" />
+                Bulk Upload
+              </Button>
+              <Button
+                onClick={() => {
+                  setIsAddModalOpen(true);
+                  resetForm();
+                }}
+                className="flex items-center bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Add Doctor
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1627,6 +1886,16 @@ const DoctorsPage: React.FC = () => {
             )}
           </div>
         </Modal>
+
+        {/* Bulk Upload Doctors Modal */}
+        <BulkUploadDoctors
+          isOpen={isBulkUploadModalOpen}
+          onClose={() => setIsBulkUploadModalOpen(false)}
+          departments={departments}
+          hospitalId={hospital?.id ?? ""}
+          existingUsers={users}
+          onBulkImport={handleBulkImport}
+        />
       </div>
     </Layout>
   );

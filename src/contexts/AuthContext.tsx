@@ -33,6 +33,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // Check if we're in the middle of a bulk import operation
+      // If so, skip the sign-out logic to preserve the admin session
+      const isBulkImporting = sessionStorage.getItem('bulkImporting') === 'true';
+      if (isBulkImporting) {
+        console.log('Bulk import in progress - skipping auth validation for new user');
+        // Don't sign out - let the bulk import handle it
+        return;
+      }
+
       const userRef = doc(db, 'Users', user.uid);
       const userSnap = await getDoc(userRef);
 
