@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Building2, Search, Loader2 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, isDoctorUser } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -29,6 +29,13 @@ const HospitalSelectionPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!currentAdmin) return;
+    if (currentAdmin.baseRole !== 'main_admin') {
+      navigate(isDoctorUser(currentAdmin) ? '/diagnostic' : '/', { replace: true });
+    }
+  }, [currentAdmin, navigate]);
 
   // Fetch all hospitals
   useEffect(() => {

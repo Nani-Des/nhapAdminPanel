@@ -3,14 +3,36 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
+export type AppBaseRole =
+  | 'main_admin'
+  | 'hospital_admin'
+  | 'hospital_manager'
+  | 'doctor';
+
 interface AdminSession {
   uid: string;
-  baseRole: 'hospital_admin' | 'hospital_manager' | 'main_admin';
+  baseRole: AppBaseRole;
+  /** Firestore `Users.Role` — true for clinical users (doctors) in your schema. */
+  roleFlag?: boolean;
   hospitalId?: string; // Optional for main_admin
   hospitalName?: string;
   permissions?: string[] | { [key: string]: boolean };
   name?: string; // User's name from Users collection
 }
+
+const STAFF_BASE_ROLES = ['main_admin', 'hospital_admin', 'hospital_manager'] as const;
+
+/** Can access hospital admin / manager / super-admin features. */
+export const isStaffAdminUser = (s: AdminSession | null | undefined): boolean =>
+  !!s &&
+  STAFF_BASE_ROLES.includes(s.baseRole as (typeof STAFF_BASE_ROLES)[number]);
+
+/**
+ * Doctor-only UI: `Users.Role === true` and not a staff admin role.
+ * (Admins may also have Role true; they keep the full panel.)
+ */
+export const isDoctorUser = (s: AdminSession | null | undefined): boolean =>
+  s?.roleFlag === true && !isStaffAdminUser(s);
 
 interface AuthContextType {
   currentAdmin: AdminSession | null;
@@ -52,24 +74,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userData = userSnap.data();
 
-      if (
-        userData.baseRole !== 'hospital_admin' &&
-        userData.baseRole !== 'hospital_manager' &&
-        userData.baseRole !== 'main_admin'
-      ) {
+      const brRaw = userData.baseRole;
+      const isStaff =
+        typeof brRaw === 'string' &&
+        STAFF_BASE_ROLES.includes(brRaw as (typeof STAFF_BASE_ROLES)[number]);
+      const roleTrue = userData.Role === true;
+
+      if (!isStaff && !roleTrue) {
         await signOut(auth);
         return;
       }
 
+      const effectiveBaseRole: AppBaseRole = isStaff
+        ? (brRaw as AppBaseRole)
+        : 'doctor';
+
+      const resolvedHospitalId =
+        (typeof userData.hospitalId === 'string' && userData.hospitalId) ||
+        (typeof userData['Hospital ID'] === 'string' && userData['Hospital ID']) ||
+        (typeof userData.HospitalID === 'string' && userData.HospitalID) ||
+        undefined;
+
       let hospitalName: string | undefined;
 
-      // Only fetch hospital name if user has a hospitalId (not for main_admin)
-      if (userData.hospitalId && userData.baseRole !== 'main_admin') {
-        const hospitalRef = doc(db, 'Hospital', userData.hospitalId);
+      // Only fetch hospital name if user has a hospital (not for main_admin without selection)
+      if (resolvedHospitalId && effectiveBaseRole !== 'main_admin') {
+        const hospitalRef = doc(db, 'Hospital', resolvedHospitalId);
         const hospitalSnap = await getDoc(hospitalRef);
-        hospitalName = hospitalSnap.exists()
-          ? hospitalSnap.data().name
-          : undefined;
+        if (hospitalSnap.exists()) {
+          const hd = hospitalSnap.data();
+          hospitalName =
+            (typeof hd['Hospital Name'] === 'string' && hd['Hospital Name']) ||
+            (typeof hd.name === 'string' && hd.name) ||
+            undefined;
+        }
       }
 
       // Get user's name from userData
@@ -79,8 +117,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setCurrentAdmin({
         uid: user.uid,
-        baseRole: userData.baseRole,
-        hospitalId: userData.hospitalId,
+        baseRole: effectiveBaseRole,
+        roleFlag: roleTrue,
+        hospitalId: resolvedHospitalId,
         hospitalName,
         permissions: userData.Permissions || userData.permissions || [],
         name: userName,

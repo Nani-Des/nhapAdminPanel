@@ -15,9 +15,11 @@ import {
   Upload,
   Bell,
   Building2,
-  FileBarChart
+  FileBarChart,
+  Package,
+  Stethoscope
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth, isDoctorUser } from '../../contexts/AuthContext';
 import { useHospital } from '../../contexts/HospitalContext';
 import { db, storage } from '../../firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -130,20 +132,30 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'Doctors', path: '/doctors', icon: <CircleUser className="w-5 h-5" />, permission: 'doctors' },
     { label: 'Shift Schedule', path: '/shift-schedule', icon: <Clock className="w-5 h-5" />, permission: 'shift_schedule' },
     { label: 'Services', path: '/services', icon: <FilePlus2 className="w-5 h-5" />, permission: 'services' },
+    { label: 'Equipment', path: '/equipment', icon: <Package className="w-5 h-5" />, permission: 'services' },
     { label: 'Referrals', path: '/referrals', icon: <RefreshCw className="w-5 h-5" />, permission: 'referrals' },
     { label: 'Reports', path: '/reports', icon: <FileBarChart className="w-5 h-5" />, permission: 'reports' },
     { label: 'Notifications', path: '/notifications', icon: <Bell className="w-5 h-5" />, permission: 'notifications', badge: unreadNotifications },
+    { label: 'Diagnostic tool', path: '/diagnostic', icon: <Stethoscope className="w-5 h-5" />, permission: 'diagnostic' },
   ];
 
-  // Filter navigation items based on permissions
-  // Dashboard is always available, others require permission
-  // main_admin has access to everything
-  const navItems = allNavItems.filter(item => {
-    if (item.path === '/') return true; // Dashboard is always accessible
-    // main_admin has access to all pages
-    if (currentAdmin?.baseRole === 'main_admin') return true;
-    return hasPermission(item.permission);
-  });
+  // Doctors: diagnostic tool only (no admin panel navigation)
+  const navItems = isDoctorUser(currentAdmin)
+    ? [
+        {
+          label: 'Diagnostic tool',
+          path: '/diagnostic',
+          icon: <Stethoscope className="w-5 h-5" />,
+          permission: 'diagnostic',
+        },
+      ]
+    : allNavItems.filter((item) => {
+        if (item.path === '/') return true;
+        // Decision support is available to all staff roles (no separate Firestore permission key required)
+        if (item.path === '/diagnostic') return true;
+        if (currentAdmin?.baseRole === 'main_admin') return true;
+        return hasPermission(item.permission);
+      });
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -188,9 +200,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <Activity className="h-6 w-6 text-teal-100" />
                 </div>
                 <span className="ml-3 text-xl font-bold text-teal-100">
-                  {currentAdmin?.baseRole === 'main_admin' 
-                    ? 'Super Admin' 
-                    : `${hospital?.["Hospital Name"] || 'Hospital'} Admin`}
+                  {currentAdmin?.baseRole === 'main_admin'
+                    ? 'Super Admin'
+                    : isDoctorUser(currentAdmin)
+                      ? `${hospital?.['Hospital Name'] || 'Hospital'} — Doctor`
+                      : `${hospital?.['Hospital Name'] || 'Hospital'} Admin`}
                 </span>
               </div>
             </div>
@@ -220,9 +234,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     {currentAdmin?.name || 'Admin'}
                   </div>
                   <div className="text-xs text-teal-200 truncate">
-                    {currentAdmin?.baseRole === 'main_admin' 
-                      ? 'Super Admin' 
-                      : hospital?.["Hospital Name"] || 'Hospital'}
+                    {currentAdmin?.baseRole === 'main_admin'
+                      ? 'Super Admin'
+                      : isDoctorUser(currentAdmin)
+                        ? 'Clinical workspace'
+                        : hospital?.['Hospital Name'] || 'Hospital'}
                   </div>
                 </div>
               </div>

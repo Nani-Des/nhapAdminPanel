@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider, useAuth, isDoctorUser } from './contexts/AuthContext';
 import { HospitalProvider, useHospital } from './contexts/HospitalContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -9,6 +9,7 @@ import HospitalSelectionPage from './pages/HospitalSelectionPage';
 import MedicalRecordsPage from './pages/MedicalRecordsPage';
 import DoctorsPage from './pages/DoctorsPage';
 import ServicesPage from './pages/ServicesPage';
+import EquipmentPage from './pages/EquipmentPage';
 // import RatingsPage from './pages/RatingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 // import AddDepartmentPage from './pages/AddDepartmentPage';
@@ -20,6 +21,7 @@ import ShiftSchedule from './pages/ShiftSchedule';
 import ReportsPage from './pages/ReportsPage';
 import { Toaster } from 'react-hot-toast';
 import NotificationsPage from './pages/NotificationsPage';
+import DiagnosticPage from './pages/DiagnosticPage';
 // import ShiftSchedulePage from './pages/ShiftSchedulePage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -29,6 +31,58 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
   
+  return <>{children}</>;
+};
+
+/** Only main_admin may open hospital selection. */
+const MainAdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, currentAdmin } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (currentAdmin?.baseRole !== 'main_admin') {
+    if (isDoctorUser(currentAdmin)) {
+      return <Navigate to="/diagnostic" replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
+
+/** Dashboard home: doctors land on diagnostic instead. */
+const HomeEntry: React.FC = () => {
+  const { currentAdmin } = useAuth();
+  if (isDoctorUser(currentAdmin)) {
+    return <Navigate to="/diagnostic" replace />;
+  }
+  return (
+    <MainAdminRoute>
+      <DashboardPage />
+    </MainAdminRoute>
+  );
+};
+
+/** Requires a selected hospital for main_admin; others use assigned hospital from context. */
+const DiagnosticAccessRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, currentAdmin } = useAuth();
+  const { hospital } = useHospital();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (currentAdmin?.baseRole === 'main_admin' && !hospital) {
+    return <Navigate to="/select-hospital" replace />;
+  }
+  return <>{children}</>;
+};
+
+const StaffOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, currentAdmin } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (isDoctorUser(currentAdmin)) {
+    return <Navigate to="/diagnostic" replace />;
+  }
   return <>{children}</>;
 };
 
@@ -72,6 +126,10 @@ const PermissionProtectedRoute: React.FC<{
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
+
+  if (isDoctorUser(currentAdmin)) {
+    return <Navigate to="/diagnostic" replace />;
+  }
   
   // For main_admin, require hospital selection
   if (currentAdmin?.baseRole === 'main_admin' && !hospital) {
@@ -108,7 +166,9 @@ const App: React.FC = () => {
               path="/select-hospital" 
               element={
                 <ProtectedRoute>
-                  <HospitalSelectionPage />
+                  <MainAdminOnlyRoute>
+                    <HospitalSelectionPage />
+                  </MainAdminOnlyRoute>
                 </ProtectedRoute>
               } 
             />
@@ -116,11 +176,19 @@ const App: React.FC = () => {
               path="/" 
               element={
                 <ProtectedRoute>
-                  <MainAdminRoute>
-                    <DashboardPage />
-                  </MainAdminRoute>
+                  <HomeEntry />
                 </ProtectedRoute>
               } 
+            />
+            <Route
+              path="/diagnostic"
+              element={
+                <ProtectedRoute>
+                  <DiagnosticAccessRoute>
+                    <DiagnosticPage />
+                  </DiagnosticAccessRoute>
+                </ProtectedRoute>
+              }
             />
             <Route 
               path="/departments" 
@@ -179,6 +247,14 @@ const App: React.FC = () => {
               } 
             />
             <Route 
+              path="/equipment" 
+              element={
+                <PermissionProtectedRoute permission="services">
+                  <EquipmentPage />
+                </PermissionProtectedRoute>
+              } 
+            />
+            <Route 
               path="/notifications" 
               element={
                 <PermissionProtectedRoute permission="notifications">
@@ -214,7 +290,9 @@ const App: React.FC = () => {
               path="/settings" 
               element={
                 <ProtectedRoute>
-                  <SettingsPage />
+                  <StaffOnlyRoute>
+                    <SettingsPage />
+                  </StaffOnlyRoute>
                 </ProtectedRoute>
               } 
             />

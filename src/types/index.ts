@@ -80,6 +80,17 @@ export interface Service {
     Description: string;
 }
 
+/** Hospital equipment register item (subcollection under Hospital) */
+export interface HospitalEquipment {
+  id?: string;
+  name: string;
+  category: string;
+  quantity: number;
+  notes?: string;
+  fromCatalog?: boolean;
+  createdAt?: Timestamp;
+}
+
 export interface ForumPost {
   id: string;
   title: string;

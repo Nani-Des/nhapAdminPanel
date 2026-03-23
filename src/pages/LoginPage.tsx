@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth, isDoctorUser } from '../contexts/AuthContext';
 import Button from '../components/ui/Button';
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,8 +11,18 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, isAuthenticated, currentAdmin } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentAdmin || location.pathname !== '/login') return;
+    if (isDoctorUser(currentAdmin)) {
+      navigate('/diagnostic', { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, currentAdmin, navigate, location.pathname]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,16 +32,20 @@ const LoginPage: React.FC = () => {
     setIsLoading(false);
 
     if (success) {
-      navigate('/');
+      // Role-based redirect runs in useEffect when auth state updates
     } else {
-      toast.error('Access denied. Invalid credentials or role.');
+      toast.error('Access denied. Check credentials or that your user has admin role or Role: true.');
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl">
-        <h2 className="text-2xl font-bold text-center mb-6">Hospital Admin Login</h2>
+        <h2 className="text-2xl font-bold text-center mb-2">NHAP Sign in</h2>
+        <p className="text-center text-sm text-gray-600 mb-6">
+          Staff and clinical users share this login. Users with <code className="text-xs">Role: true</code>{' '}
+          in Firestore (and not an admin role) only see the diagnostic tool.
+        </p>
 
         <form onSubmit={handleLogin} className="space-y-5">
           {/* Email */}
