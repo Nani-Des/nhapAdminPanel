@@ -3,4 +3,7 @@ export type DiagnosticRunPhase =
   | 'remote_config'
   | 'building_local'
   | 'building_network'
-  | 'gemini';
+  | 'gemini'
+  | 'groq';
+
+export type AiProvider = 'gemini' | 'groq';
