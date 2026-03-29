@@ -14,6 +14,13 @@ export default defineConfig({
         secure: true,
         rewrite: (path) => path.replace(/^\/google-ai-api/, ''),
       },
+      // Dev proxy for Groq API — avoids CORS during local development.
+      '/groq-api': {
+        target: 'https://api.groq.com/openai/v1',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/groq-api/, ''),
+      },
     },
   },
   optimizeDeps: {
