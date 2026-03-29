@@ -25,5 +25,7 @@ export function splitMarkdownSections(text: string): { heading: string; content:
         content: lines.slice(1).join('\n').trim(),
       };
     })
-    .filter((s) => s.heading && (s.content.length > 0 || parts.length === 1));
+    // Keep all titled sections even empty bodies — the AI sometimes leaves a
+    // "### Referral suggestions" block blank; dropping it hid downstream referral UI.
+    .filter((s) => Boolean(s.heading?.trim()));
 }

@@ -93,9 +93,11 @@ You MUST respond in Markdown and use these exact ### section headings in this or
 ### Fit with current hospital
 ### Referral suggestions
 ### Missing information or limits
+### Prescription (draft)
 ### Disclaimer
 
 In **Referral suggestions**, use the "Other hospitals in the network" JSON to name specific facilities when appropriate. If the current hospital is sufficient, say so clearly.
+In **Prescription (draft)**, propose medications ONLY when appropriate from the case and local practice. Use a clear list (one medication per bullet or line): drug name, strength, dose, route, frequency, duration, and brief patient instructions. Prefer generic names where reasonable. If drug treatment is not appropriate or information is insufficient, write "None" or "Not applicable" and explain briefly. Do not invent allergies or contraindications not implied by the note — if unknown, say allergies / renal function / pregnancy status are unknown and must be verified before dispensing. This section is a draft for the clinician to review, edit, and authorize — not a legal prescription until signed off.
 In **Disclaimer**, state briefly that the clinician must verify all decisions and that this output is not a substitute for professional judgement.`;
 
 export interface GeminiDiagnosticResult {

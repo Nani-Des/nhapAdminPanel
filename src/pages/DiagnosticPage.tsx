@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Stethoscope,
   Loader2,
@@ -14,6 +14,11 @@ import {
   X,
   Activity,
   Shield,
+  Send,
+  Printer,
+  Download,
+  Pill,
+  RotateCcw,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { Card, CardContent } from "../components/ui/Card";
@@ -26,7 +31,10 @@ import {
   fetchReferralBySerial,
   fetchPeerHospitalsPayload,
   type DiagnosticRequestBody,
+  type PeerHospitalPayload,
 } from "../services/buildDiagnosticPayload";
+import { findPeersMentionedInText } from "../utils/matchPeerHospitalsInText";
+import ReferralWorkflowModal from "../components/diagnostic/ReferralWorkflowModal";
 import {
   getGoogleAiStudioApiKeyFromRemoteConfig,
   runGeminiDiagnostic,
@@ -36,6 +44,10 @@ import {
   runGroqDiagnostic,
 } from "../services/groqDiagnostic";
 import { splitMarkdownSections } from "../utils/markdownSections";
+import {
+  extractPrescriptionDraftFromSummary,
+  filterSectionsExcludingPrescription,
+} from "../utils/diagnosticPrescription";
 import {
   phaseLabelUserFriendly,
   mapDiagnosticError,
@@ -138,6 +150,14 @@ const SECTION_ACCENTS = [
   "border-l-indigo-500",
 ];
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /* ── Main component ────────────────────────────────────────── */
 
 const DiagnosticPage: React.FC = () => {
@@ -158,6 +178,12 @@ const DiagnosticPage: React.FC = () => {
     title: string;
     detail: string;
   } | null>(null);
+  const [referralModal, setReferralModal] = useState<{
+    open: boolean;
+    initialTarget: PeerHospitalPayload | null;
+  }>({ open: false, initialTarget: null });
+  const [prescriptionDraft, setPrescriptionDraft] = useState("");
+  const [prescriptionPatientLabel, setPrescriptionPatientLabel] = useState("");
 
   const appendFromDictation = useCallback((text: string) => {
     setPresentingNote((prev) => {
@@ -304,6 +330,197 @@ const DiagnosticPage: React.FC = () => {
     if (typeof summary !== "string") return [];
     return splitMarkdownSections(summary);
   }, [result]);
+
+  /** Full AI text — match facility names anywhere (not only "Referral suggestions"). */
+  const guidanceFullText = useMemo(() => {
+    if (!result || typeof result !== "object" || result === null) return "";
+    const s = (result as { summary?: string }).summary;
+    return typeof s === "string" ? s : "";
+  }, [result]);
+
+  const peerHospitalsFromResult = useMemo((): PeerHospitalPayload[] => {
+    if (!result || typeof result !== "object" || result === null) return [];
+    const payload = (result as { payload_sent?: { peer_hospitals?: unknown } })
+      .payload_sent;
+    const raw = payload?.peer_hospitals;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (p): p is PeerHospitalPayload =>
+        typeof p === "object" &&
+        p !== null &&
+        typeof (p as PeerHospitalPayload).hospital_id === "string" &&
+        typeof (p as PeerHospitalPayload).name === "string",
+    );
+  }, [result]);
+
+  const peersMentionedInGuidance = useMemo(() => {
+    if (!guidanceFullText.trim() || peerHospitalsFromResult.length === 0)
+      return [];
+    return findPeersMentionedInText(
+      guidanceFullText,
+      peerHospitalsFromResult,
+    );
+  }, [guidanceFullText, peerHospitalsFromResult]);
+
+  const resultSectionsDisplay = useMemo(
+    () => filterSectionsExcludingPrescription(resultSections),
+    [resultSections],
+  );
+
+  const aiPrescriptionBaseline = useMemo(() => {
+    if (!guidanceFullText.trim()) return "";
+    return extractPrescriptionDraftFromSummary(guidanceFullText);
+  }, [guidanceFullText]);
+
+  useEffect(() => {
+    setPrescriptionDraft(aiPrescriptionBaseline);
+    setPrescriptionPatientLabel("");
+  }, [aiPrescriptionBaseline]);
+
+  const hospitalDisplayName = useMemo(() => {
+    if (!hospital) return "";
+    const rec = hospital as Record<string, unknown>;
+    return (
+      (typeof rec["Hospital Name"] === "string" && rec["Hospital Name"]) ||
+      (typeof rec.name === "string" && rec.name) ||
+      ""
+    );
+  }, [hospital]);
+
+  const printPrescription = useCallback(() => {
+    const body = prescriptionDraft.trim();
+    if (!body) {
+      toast.error("Add prescription text before printing.");
+      return;
+    }
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      toast.error("Allow popups to print or save as PDF.");
+      return;
+    }
+    const clinician =
+      currentAdmin?.name?.trim() || "Prescribing clinician";
+    const hosp = hospitalDisplayName || "Health facility";
+    const when = new Date().toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    const patient =
+      prescriptionPatientLabel.trim() || "________________";
+    const noteExcerpt = presentingNote.trim().slice(0, 600);
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Prescription draft</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; padding: 28px; max-width: 720px; margin: 0 auto; color: #111; line-height: 1.45; }
+  h1 { font-size: 1.35rem; margin: 0 0 6px; font-weight: 700; }
+  .meta { font-size: 0.88rem; color: #424242; margin-bottom: 22px; line-height: 1.6; }
+  .meta div { margin-bottom: 4px; }
+  .rx { white-space: pre-wrap; border: 1px solid #bdbdbd; padding: 18px; border-radius: 10px; background: #fafafa; font-size: 0.98rem; }
+  .note { font-size: 0.82rem; color: #424242; margin-top: 18px; white-space: pre-wrap; padding-top: 14px; border-top: 1px dashed #ccc; }
+  .foot { margin-top: 22px; font-size: 0.72rem; color: #616161; }
+  @media print {
+    body { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+  <h1>Prescription (draft)</h1>
+  <div class="meta">
+    <div><strong>Facility:</strong> ${escapeHtml(hosp)}</div>
+    <div><strong>Clinician:</strong> ${escapeHtml(clinician)}</div>
+    <div><strong>Patient:</strong> ${escapeHtml(patient)}</div>
+    <div><strong>Printed:</strong> ${escapeHtml(when)}</div>
+  </div>
+  <div class="rx">${escapeHtml(body)}</div>
+  ${
+    noteExcerpt
+      ? `<div class="note"><strong>Clinical note (excerpt)</strong><br/>${escapeHtml(noteExcerpt)}</div>`
+      : ""
+  }
+  <div class="foot">Draft for clinician review only — verify before signing and dispensing. Not a legal prescription until authorized. AI-generated content may contain errors.</div>
+  <script>window.onload = function () { window.focus(); window.print(); };</script>
+</body>
+</html>`;
+    printWin.document.write(html);
+    printWin.document.close();
+    toast.success(
+      "Print preview opened — choose “Save as PDF” in the print dialog if you need a file.",
+    );
+  }, [
+    prescriptionDraft,
+    prescriptionPatientLabel,
+    presentingNote,
+    currentAdmin?.name,
+    hospitalDisplayName,
+  ]);
+
+  const downloadPrescriptionText = useCallback(() => {
+    const body = prescriptionDraft.trim();
+    if (!body) {
+      toast.error("Nothing to download.");
+      return;
+    }
+    const clinician =
+      currentAdmin?.name?.trim() || "Prescribing clinician";
+    const hosp = hospitalDisplayName || "Health facility";
+    const when = new Date().toISOString();
+    const patient =
+      prescriptionPatientLabel.trim() || "Not specified";
+    const lines = [
+      "PRESCRIPTION (DRAFT) — NOT VALID UNTIL CLINICIAN AUTHORIZED",
+      `Facility: ${hosp}`,
+      `Clinician: ${clinician}`,
+      `Patient: ${patient}`,
+      `Exported: ${when}`,
+      "",
+      "--- Prescription ---",
+      body,
+      "",
+    ];
+    if (presentingNote.trim()) {
+      lines.push("--- Clinical note (excerpt) ---");
+      lines.push(presentingNote.trim().slice(0, 600));
+    }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safe = when.replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `prescription-draft-${safe}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Download started.");
+  }, [
+    prescriptionDraft,
+    prescriptionPatientLabel,
+    presentingNote,
+    currentAdmin?.name,
+    hospitalDisplayName,
+  ]);
+
+  const resetPrescriptionFromAi = useCallback(() => {
+    setPrescriptionDraft(aiPrescriptionBaseline);
+    toast.success("Restored prescription draft from this guidance run.");
+  }, [aiPrescriptionBaseline]);
+
+  const openReferralWorkflow = (initialTarget: PeerHospitalPayload | null) => {
+    if (!currentAdmin?.uid) {
+      toast.error("You must be signed in to send a referral.");
+      return;
+    }
+    if (peerHospitalsFromResult.length === 0) {
+      toast.error(
+        "No other facilities are registered in the network for a digital referral.",
+      );
+      return;
+    }
+    setReferralModal({ open: true, initialTarget });
+  };
 
   /* ── No hospital fallback ────────────────────────────────── */
 
@@ -797,12 +1014,94 @@ const DiagnosticPage: React.FC = () => {
                 );
               })()}
 
-              {/* Result sections */}
-              {resultSections.length > 0 && (
+              {/* Always visible after a run (does not depend on markdown headings). */}
+              {result &&
+                !resultError &&
+                peerHospitalsFromResult.length > 0 && (
+                  <Card className="rounded-2xl border-teal-200/80 shadow-md overflow-hidden border-l-4 border-l-teal-600 bg-gradient-to-br from-teal-50/80 to-white">
+                    <CardContent className="p-5 sm:p-6">
+                      <div className="flex items-start gap-3 mb-4">
+                        <div className="shrink-0 h-10 w-10 rounded-xl bg-teal-600 flex items-center justify-center">
+                          <Send className="w-5 h-5 text-white" aria-hidden />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold text-gray-900">
+                            Refer a patient
+                          </h3>
+                          <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                            Start the same digital referral used in the mobile
+                            app. The receiving facility will see it in their
+                            Referrals list.
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        size="lg"
+                        fullWidth
+                        className="rounded-xl mb-4"
+                        icon={<Send className="w-5 h-5" />}
+                        onClick={() => openReferralWorkflow(null)}
+                      >
+                        Refer a patient
+                      </Button>
+
+                      {peersMentionedInGuidance.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Quick pick — named in this guidance
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {peersMentionedInGuidance.map((p) => (
+                              <Button
+                                key={p.hospital_id}
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openReferralWorkflow(p)}
+                              >
+                                {p.name}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          If the assistant used a shortened name, use{" "}
+                          <strong className="font-medium text-gray-700">
+                            Refer a patient
+                          </strong>{" "}
+                          above and choose the facility from the list.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+              {result && !resultError && peerHospitalsFromResult.length === 0 && (
+                <Card className="rounded-2xl border-amber-200/70 bg-amber-50/40">
+                  <CardContent className="p-4 sm:p-5">
+                    <p className="text-sm text-amber-950/90 leading-relaxed">
+                      <span className="font-semibold">Referrals: </span>
+                      There are no other hospitals in your Firestore network
+                      besides this one, so there is nowhere to send a peer
+                      referral from this tool. Add more{" "}
+                      <code className="text-xs bg-amber-100/80 px-1 rounded">
+                        Hospital
+                      </code>{" "}
+                      documents or check your account hospital context.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Result sections (prescription block is edited separately below) */}
+              {resultSectionsDisplay.length > 0 && (
                 <div className="space-y-3">
-                  {resultSections.map((section, i) => (
+                  {resultSectionsDisplay.map((section, i) => (
                     <Card
-                      key={section.heading}
+                      key={`${section.heading}-${i}`}
                       className={`rounded-2xl border-gray-200 shadow-sm overflow-hidden border-l-4 ${SECTION_ACCENTS[i % SECTION_ACCENTS.length]}`}
                     >
                       <CardContent className="p-5">
@@ -816,6 +1115,89 @@ const DiagnosticPage: React.FC = () => {
                     </Card>
                   ))}
                 </div>
+              )}
+
+              {/* Editable prescription (from AI draft; clinician must review before print) */}
+              {result && !resultError && guidanceFullText && (
+                <Card className="rounded-2xl border-indigo-200/80 shadow-md overflow-hidden border-l-4 border-l-indigo-600 bg-gradient-to-br from-indigo-50/60 to-white">
+                  <CardContent className="p-5 sm:p-6">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="shrink-0 h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center">
+                        <Pill className="w-5 h-5 text-white" aria-hidden />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-base font-bold text-gray-900">
+                          Prescription (draft)
+                        </h3>
+                        <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                          A draft is generated with your guidance. Edit it to
+                          match your clinical judgement before printing or
+                          downloading.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 mb-4">
+                      <Input
+                        label="Patient name or identifier (optional, for printout)"
+                        value={prescriptionPatientLabel}
+                        onChange={(e) =>
+                          setPrescriptionPatientLabel(e.target.value)
+                        }
+                        placeholder="e.g. ward bed label, initials, or full name"
+                        className="rounded-xl"
+                      />
+                      <div>
+                        <label
+                          htmlFor="rx-draft-body"
+                          className="block text-sm font-medium text-gray-700 mb-1.5"
+                        >
+                          Prescription text
+                        </label>
+                        <textarea
+                          id="rx-draft-body"
+                          value={prescriptionDraft}
+                          onChange={(e) =>
+                            setPrescriptionDraft(e.target.value)
+                          }
+                          rows={12}
+                          placeholder="Draft from the assistant appears here after you run guidance. You can also type or paste a prescription."
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 font-mono text-sm leading-relaxed"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<RotateCcw className="w-4 h-4" />}
+                        onClick={resetPrescriptionFromAi}
+                        disabled={!aiPrescriptionBaseline}
+                      >
+                        Restore AI draft
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        icon={<Printer className="w-4 h-4" />}
+                        onClick={printPrescription}
+                      >
+                        Print / Save as PDF
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<Download className="w-4 h-4" />}
+                        onClick={downloadPrescriptionText}
+                      >
+                        Download text file
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
 
               {/* Model badge */}
@@ -841,6 +1223,17 @@ const DiagnosticPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <ReferralWorkflowModal
+        isOpen={referralModal.open}
+        onClose={() =>
+          setReferralModal({ open: false, initialTarget: null })
+        }
+        initialTarget={referralModal.initialTarget}
+        peerOptions={peerHospitalsFromResult}
+        defaultReason={presentingNote.trim()}
+        referredByUid={currentAdmin?.uid ?? ""}
+      />
     </Layout>
   );
 };
